@@ -15,3 +15,8 @@ dependencies:
 - requests
 - ignite
 - opencv
+- ipython
+- tqdm
+- scikit-learn
+- jupyter
+- nb_conda
