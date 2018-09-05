@@ -1,0 +1,17 @@
+name: tennis
+channels:
+- conda-forge
+- defaults
+- pytorch
+dependencies:
+- python=3.6
+- matplotlib
+- numpy
+- pandas
+- scipy
+- pytorch
+- torchvision
+- cookiecutter
+- requests
+- ignite
+- opencv
