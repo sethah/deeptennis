@@ -7,7 +7,7 @@ from pathlib import Path
 """
 python src/data/vid2img.py \
 --vid-path ./data/raw/djo_fed_aus.mp4 \
---img-path ./data/processed/djo_fed_aus/sample/ \
+--img-path ./data/processed/djo_fed_aus/sample/0/ \
 --fps 0.1
 """
 

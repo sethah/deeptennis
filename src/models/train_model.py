@@ -38,10 +38,16 @@ if __name__ == "__main__":
     parser.add_argument("--save-path", type=str, default=None)
     parser.add_argument("--gpu", type=bool, default=False)
     parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--img-height", type=int, default=224)
+    parser.add_argument("--img-width", type=int, default=394)
 
     args = parser.parse_args()
+    transforms.RandomAffine
 
-    img_transforms = transforms.Compose([transforms.Resize(224), transforms.ToTensor()])
+    out_size = (args.img_height, args.img_width)
+    img_transforms = transforms.Compose([transforms.Resize(args.img_height),
+                                         transforms.CenterCrop(out_size),
+                                         transforms.ToTensor()])
     tennis_data = torchvision.datasets.ImageFolder(args.imgs_path, transform=img_transforms)
     data_loader = torch.utils.data.DataLoader(tennis_data,
                                               batch_size=args.batch_size,
