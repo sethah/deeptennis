@@ -48,6 +48,7 @@ if __name__ == "__main__":
             logging.info(f"Creating image directory {img_path}.")
             img_path.mkdir(parents=True, exist_ok=True)
 
-        subprocess.call(["ffmpeg", "-i", str(vid), "-r", str(args.fps), str(img_path / "%05d.jpg")])
+        subprocess.call(["ffmpeg", "-i", str(vid), "-vf", "scale=-1:360",
+                         "-r", str(args.fps), str(img_path / "%05d.jpg")])
 
 

@@ -2,10 +2,11 @@ import numpy as np
 import argparse
 from pathlib import Path
 import logging
+from logging.config import fileConfig
 from collections import Counter
 import scipy.signal as sig
 import cv2
-import tqdm
+from tqdm import tqdm
 import itertools
 
 import csv
@@ -72,7 +73,7 @@ def get_clip_indices(mask):
     if action_mask[0] == 1:
         starts = np.concatenate([[0], starts])
     if action_mask[-1] == 1:
-        ends = np.concatenate([ends, action_mask.shape[0]])
+        ends = np.concatenate([ends, [action_mask.shape[0]]])
 
     # assert starts.shape[0] == ends.shape[0]
     return list(zip(starts + 1, ends + 1))
@@ -107,6 +108,7 @@ if __name__ == "__main__":
     parser.add_argument("--outline-threshold", type=int, default=150)
 
     args = parser.parse_args()
+    fileConfig('logging_config.ini')
 
     mask_path = Path(args.mask_path)
     frames_path = Path(args.frames_path)
@@ -117,18 +119,19 @@ if __name__ == "__main__":
         match_name = mask.stem
         save_name = save_path / (match_name + ".csv")
         if save_name.exists():
-            print(f"skipping {save_name}")
+            logging.debug(f"skipping {save_name}")
             continue
         action_mask = np.load(mask).astype(int)
-        frame_list = np.array(list((frames_path / match_name).iterdir()))
+        frame_list = np.array(list(sorted((frames_path / match_name).iterdir())))
 
         clips = []
         for start_idx, end_idx in get_clip_indices(action_mask):
             clips.append(frame_list[start_idx:end_idx])
         all_clip_frames = [frame for clip in clips for frame in clip]
 
+        logging.debug(f"Begin bounding box detection for {match_name}")
         coords = []
-        for frame in all_clip_frames:
+        for frame in tqdm(all_clip_frames):
             img = cv2.imread(str(frame))
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             court_outline = get_court_outline(img, threshold=args.outline_threshold)
@@ -143,6 +146,7 @@ if __name__ == "__main__":
         for proposals in coords:
             best_idx = np.argmin([abs(get_area(c) - median_area) for c in proposals])
             best_boxes.append(list(proposals[best_idx]))
+        logging.debug(f"End bounding box detection for {match_name}")
 
         with open(save_name, 'w') as csvfile:
             boxwriter = csv.writer(csvfile, delimiter=',', quotechar='|')

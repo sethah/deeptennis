@@ -30,18 +30,25 @@ requirements: test_environment
 data: requirements
 	$(PYTHON_INTERPRETER) src/data/make_dataset.py
 
+bounding_box: extract_action
+	python src/models/court_bounding_boxes.py \
+	--mask-path $(DATA_DIR)/interim/action_mask \
+	--save-path $(DATA_DIR)/interim/ \
+	--frames-path $(DATA_DIR)/processed/frames
+
 extract_action: featurize_frames
 	python src/models/extract_action.py \
 	--features-path $(DATA_DIR)/interim/featurized_frames \
 	--save-path $(DATA_DIR)/interim
 
 featurize_frames : FEATURIZE_PCA = 10
+featurize_frames : BATCH_SIZE = 32
 featurize_frames : frames
 	python src/models/featurize_frames.py \
 	--imgs-path $(DATA_DIR)/processed/frames \
 	--save-path $(DATA_DIR)/interim/featurized_frames/ \
 	--gpu $(USE_GPU) \
-	--batch-size 32 \
+	--batch-size $(BATCH_SIZE) \
 	--pca $(FEATURIZE_PCA)
 
 frames:

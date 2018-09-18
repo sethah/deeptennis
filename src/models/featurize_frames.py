@@ -87,7 +87,7 @@ if __name__ == "__main__":
         if match_path.exists():
             logging.info(f"Skipping match {match.stem}")
             continue
-        ds = ImageDataset(list(match.iterdir()), transform=img_transforms)
+        ds = ImageDataset(list(sorted(match.iterdir())), transform=img_transforms)
         data_loader = torch.utils.data.DataLoader(ds,
                                                   batch_size=args.batch_size,
                                                   shuffle=False,
@@ -111,20 +111,3 @@ if __name__ == "__main__":
             feats = pca.fit_transform(feats)
         if args.save_path is not None:
             np.save(str(match_path), feats)
-
-    # for cls in tennis_data.classes:
-    #     cls_id = tennis_data.class_to_idx[cls]
-    #     feats = features_np[labels == cls_id]
-    #     if args.pca != -1:
-    #         pca = PCA(n_components=args.pca)
-    #         feats = pca.fit_transform(feats)
-    #     if args.save_path is not None:
-    #         np.save(str(save_path / (cls + ".npy")), feats)
-
-    # sys.exit()
-    # if args.pca != -1:
-    #     pca = PCA(n_components=args.pca)
-    #     features_np = pca.fit_transform(features_np)
-    #
-    # if args.save_path is not None:
-    #     np.save(args.save_path, features_np)
