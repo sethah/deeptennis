@@ -151,8 +151,10 @@ if __name__ == "__main__":
         with open(save_name, 'w') as csvfile:
             boxwriter = csv.writer(csvfile, delimiter=',', quotechar='|')
             clip_idx = 0
+            frame_idx = 0
             for clip in clips:
                 for frame in clip:
-                    boxwriter.writerow([str(frame.stem), clip_idx] + best_boxes[clip_idx])
+                    boxwriter.writerow([str(frame.stem), clip_idx] + best_boxes[frame_idx])
+                    frame_idx += 1
                 clip_idx += 1
 
