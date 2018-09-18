@@ -6,11 +6,10 @@ import torch
 
 class ImageDataset(torch.utils.data.Dataset):
 
-    def __init__(self, files, labels=None, transform=None, device=torch.device("cpu")):
+    def __init__(self, files, labels=None, transform=None):
         self.transform = transform
         self.files = files
         self.labels = np.zeros(len(files)) if labels is None else labels
-        self.device = device
 
     def __len__(self):
         return len(self.files)
@@ -23,7 +22,7 @@ class ImageDataset(torch.utils.data.Dataset):
             sample = img.convert('RGB')
         if self.transform is not None:
             sample = self.transform(sample)
-        return sample.to(self.device), torch.tensor(label, dtype=torch.int64).to(self.device)
+        return sample, torch.tensor(label, dtype=torch.int64)
 
     @staticmethod
     def get_file_id(file):

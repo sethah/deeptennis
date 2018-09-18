@@ -1,28 +1,53 @@
 import os
+import logging
 import argparse
 import subprocess
 from pathlib import Path
+import shutil
 
 
 """
 python src/data/vid2img.py \
---vid-path ./data/raw/djo_fed_aus.mp4 \
---img-path ./data/processed/djo_fed_aus/sample/0/ \
---fps 0.1
+--vid-path ./data/raw/ \
+--vid-name djokovic_federer_aus_16.mp4 \
+--img-path ./data/processed/frames \
+--fps 1
+
+python src/data/vid2img.py \
+--vid-path ./data/raw/ \
+--img-path ./data/processed/frames \
+--fps 1
 """
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--fps", type=float, default=25)
     parser.add_argument("--vid-path", type=str)
+    parser.add_argument("--vid-name", type=str, default=None)
     parser.add_argument("--img-path", type=str)
+    parser.add_argument("--overwrite", action='store_true')
+    parser.set_defaults(overwrite=False)
     args = parser.parse_args()
 
     vid_path = Path(args.vid_path)
-    img_path = Path(args.img_path)
+    if args.vid_name is None:
+        vids = [v for v in vid_path.iterdir() if v.name[-4:] == ".mp4"]
+    else:
+        vids = [vid_path / args.vid_name]
 
-    if not os.path.exists(img_path):
-        os.mkdir(img_path)
-    subprocess.call(["ffmpeg", "-i", str(vid_path), "-r", str(args.fps), str(img_path / "%05d.jpg")])
+    for vid in vids:
+        label = vid.name.split(".")[0]
+        img_path = Path(args.img_path) / label
+        if img_path.exists() and args.overwrite:
+            shutil.rmtree(img_path)
+        elif img_path.exists():
+            logging.info(f"{img_path} exists. Skipping.")
+            continue
+
+        if not img_path.exists():
+            logging.info(f"Creating image directory {img_path}.")
+            img_path.mkdir(parents=True, exist_ok=True)
+
+        subprocess.call(["ffmpeg", "-i", str(vid), "-r", str(args.fps), str(img_path / "%05d.jpg")])
 
 

@@ -9,6 +9,7 @@ BUCKET = [OPTIONAL] your-bucket-for-syncing-data (do not include 's3://')
 PROFILE = default
 PROJECT_NAME = tennis
 PYTHON_INTERPRETER = python3
+USE_GPU = 0
 
 ifeq (,$(shell which conda))
 HAS_CONDA=False
@@ -28,6 +29,35 @@ requirements: test_environment
 ## Make Dataset
 data: requirements
 	$(PYTHON_INTERPRETER) src/data/make_dataset.py
+
+extract_action: featurize_frames
+	python src/models/extract_action.py \
+	--features-path $(DATA_DIR)/interim/featurized_frames \
+	--save-path $(DATA_DIR)/interim
+
+featurize_frames : FEATURIZE_PCA = 10
+featurize_frames : frames
+	python src/models/featurize_frames.py \
+	--imgs-path $(DATA_DIR)/processed/frames \
+	--save-path $(DATA_DIR)/interim/featurized_frames/ \
+	--gpu $(USE_GPU) \
+	--batch-size 32 \
+	--pca $(FEATURIZE_PCA)
+
+frames:
+	python src/data/vid2img.py \
+	--vid-path $(DATA_DIR)/raw/ \
+	--img-path $(DATA_DIR)/processed/frames \
+	--fps 1
+
+clean_data_interim:
+	rm -rf $(DATA_DIR)/interim/*
+
+clean_data_processed:
+	rm -rf $(DATA_DIR)/processed/*
+
+clean_data: clean_data_interim clean_data_processed
+
 
 ## Delete all compiled Python files
 clean:

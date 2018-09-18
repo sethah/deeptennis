@@ -22,19 +22,21 @@ class CAE(nn.Module):
         self.embed_size = embed_size
 
         # Encoder
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)
-        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1)
-        self.conv4 = nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1)
+        self.conv1 = nn.Conv2d(1, 8, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(8, 8, kernel_size=3, stride=2, padding=1)
+        self.conv3 = nn.Conv2d(8, 16, kernel_size=3, stride=2, padding=1)
+        self.conv4 = nn.Conv2d(16, 16, kernel_size=3, stride=2, padding=1)
+        self.conv5 = nn.Conv2d(16, 16, kernel_size=3, stride=2, padding=1)
 
         self.fc1 = nn.Linear(self.height // 8 * self.width // 8 * 128, self.embed_size)
         self.fc2 = nn.Linear(self.embed_size, self.height // 8 * self.width // 8 * 128)
 
         # Decoder
-        self.deconv1 = nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1)
-        self.deconv2 = nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1)
-        self.deconv3 = nn.ConvTranspose2d(32, 1, kernel_size=3, stride=2, padding=1, output_padding=1)
-        self.conv5 = nn.Conv2d(1, 1, kernel_size=3, stride=1, padding=1)
+        self.deconv1 = nn.ConvTranspose2d(16, 16, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.deconv2 = nn.ConvTranspose2d(16, 16, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.deconv3 = nn.ConvTranspose2d(16, 8, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.deconv4 = nn.ConvTranspose2d(8, 1, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.conv6 = nn.Conv2d(1, 1, kernel_size=3, stride=1, padding=1)
 
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
@@ -44,15 +46,15 @@ class CAE(nn.Module):
         out = self.relu(self.conv2(out))
         out = self.relu(self.conv3(out))
         out = self.relu(self.conv4(out))
-        out = self.fc1(out.view(out.shape[0], -1))
+        out = self.relu(self.conv5(out))
         return out
 
     def decode(self, encoded):
-        out = self.fc2(encoded).view(encoded.shape[0], 128, self.height // 8, self.width // 8)
-        out = self.relu(self.deconv1(out))
+        out = self.relu(self.deconv1(encoded))
         out = self.relu(self.deconv2(out))
         out = self.relu(self.deconv3(out))
-        out = self.sigmoid(self.conv5(out))
+        out = self.relu(self.deconv4(out))
+        out = self.sigmoid(self.conv6(out))
         return out
 
     def forward(self, x):
@@ -65,7 +67,18 @@ PYTHONPATH=./src/ python src/models/train_autoencoder.py \
 --img-height 256 \
 --img-width 256 \
 --n_epochs 1 \
---model-save-path ./models/autoencoder/model1
+--model-save-path ./models/autoencoder/model1 \
+--batch-size 64 \
+--gpu True
+
+PYTHONPATH=./src/ python src/models/train_autoencoder.py \
+--imgs-path ./data/processed/djo_fed_aus/0/ \
+--img-height 256 \
+--img-width 256 \
+--n_epochs 4 \
+--model-save-path ./models/autoencoder/model1.pkl \
+--batch-size 64 \
+--gpu True
 """
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -79,6 +92,9 @@ if __name__ == "__main__":
     parser.add_argument("--img-width", type=int, default=394)
     parser.add_argument("--img-mean", type=str, default=None)
     parser.add_argument("--img-std", type=str, default=None)
+    parser.add_argument("--embed-size", type=int, default=32)
+    parser.add_argument("--initial-lr", type=float, default=0.001)
+    parser.add_argument("--lr-gamma", type=float, default=0.95)
 
     args = parser.parse_args()
 
@@ -99,22 +115,22 @@ if __name__ == "__main__":
     print(mean_img, std_img)
 
     device = torch.device("cuda:0") if args.gpu else torch.device("cpu")
-    img_transforms = transforms.Compose([transforms.Resize(300),
-                                         transforms.Grayscale(),
-                                         transforms.RandomAffine(5, translate=(0.1, 0.1), scale=(0.8, 1.2)),
-                                         transforms.CenterCrop(out_size),
-                                         transforms.ToTensor(),
-                                         transforms.Normalize(mean=mean_img, std=std_img)])
-    dataset = ImageDataset(list(Path(args.imgs_path).iterdir()), transform=img_transforms,
-                           device=device)
+    img_transforms = [transforms.Resize(300),
+                      transforms.Grayscale(),
+                      transforms.RandomAffine(5, translate=(0.1, 0.1), scale=(0.8, 1.2)),
+                      transforms.CenterCrop(out_size),
+                      transforms.ToTensor(),
+                      transforms.Normalize(mean=mean_img, std=std_img)]
+    dataset = ImageDataset(list(Path(args.imgs_path).iterdir()),
+                           transform=transforms.Compose(img_transforms))
     data_loader = torch.utils.data.DataLoader(dataset,
                                               batch_size=args.batch_size,
                                               shuffle=False,
                                               num_workers=4)
-    model = CAE(args.img_height, args.img_width).to(device)
+    model = CAE(args.img_height, args.img_width, embed_size=args.embed_size).to(device)
     criterion = nn.MSELoss().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-    lr_sched = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.initial_lr)
+    lr_sched = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.lr_gamma)
     if args.load_path is not None:
         state = torch.load(args.load_path)
         model.load_state_dict(state['model'])
@@ -122,10 +138,12 @@ if __name__ == "__main__":
         lr_sched.load_state_dict(state['sched'])
 
     for epoch in range(args.n_epochs):
+        lr_sched.step(epoch)
         epoch_loss = 0.
         epoch_samples = 0
         for inp, targ in tqdm(data_loader):
             optimizer.zero_grad()
+            inp = inp.to(device)
             out = model.forward(inp)
             loss = criterion(out, inp)
             epoch_loss += loss.item()
@@ -133,7 +151,7 @@ if __name__ == "__main__":
             loss.backward()
             optimizer.step()
         print(epoch_loss / epoch_samples)
-        lr_sched.step(epoch)
+        print("New learning rate: ", lr_sched.get_lr())
 
     if args.model_save_path is not None:
         Path(args.model_save_path).parent.mkdir(parents=True, exist_ok=True)
