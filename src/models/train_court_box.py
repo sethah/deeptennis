@@ -3,67 +3,16 @@ import argparse
 from pathlib import Path
 import logging
 
-import torch
 import torch.nn as nn
 import torch.utils
+import torch.utils.data as data
 import torchvision.transforms as transforms
+import torchvision.models as models
 
-from tqdm import tqdm
-
-from data.dataset import ImageDataset
-import utils
 from src.data.clip import Clip, Video
-from src.data.dataset import ImageDatasetBox
+from src.data.dataset import ImageDatasetBox, GridDataset
 from src.vision.transforms import *
-
-
-class WrapperDataset(torch.utils.data.Dataset):
-    def __init__(self, bbox_ds, grid_size):
-        self.ds = bbox_ds
-        self.grid_size = grid_size
-
-    def __getitem__(self, idx):
-        data, target = self.ds[idx]
-        gsize = torch.IntTensor(self.grid_size).long().to(data.device)
-        im_size = torch.tensor(data.size()[1:]).long().to(data.device)
-        grid_coords = (target / (im_size / gsize).double()).long()
-        n_coords = 4
-        z = torch.zeros([n_coords] + gsize.tolist())
-        for i, coord in enumerate(grid_coords):
-            c = coord.numpy()
-            if np.all(c >= 0) and np.all(c < np.array(self.grid_size)):
-                z[i, c[1], c[0]] = 1.
-        return data, z
-
-    def __len__(self):
-        return len(self.ds)
-
-
-class StdConv(nn.Module):
-
-    def __init__(self, nin, nout, stride=2, drop=0.1):
-        super().__init__()
-        self.conv = nn.Conv2d(nin, nout, 3, stride=stride, padding=1)
-        self.bn = nn.BatchNorm2d(nout)
-        self.drop = nn.Dropout(drop)
-
-    def forward(self, x):
-        return self.drop(self.bn(F.relu(self.conv(x))))
-
-
-class CornerHead(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.drop = nn.Dropout(0.25)
-        self.sconv0 = StdConv(128, 128, stride=1)
-        self.sconv2 = StdConv(128, 128, stride=1)
-        self.out = nn.Conv2d(128, 4, 3, padding=1)
-
-    def forward(self, x):
-        x = self.drop(F.relu(x))
-        x = self.sconv0(x)
-        x = self.sconv2(x)
-        return self.out(x)
+import src.utils as utils
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -83,18 +32,73 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     im_size = (int(x) for x in args.im_size.split(","))
+    train_device = torch.device("cuda:0") if args.gpu else torch.device("cpu")
 
-    video_frames = list(Path(args.frame_path).iterdir())
+    frame_path = Path(args.frame_path)
+    video_frames = list(frame_path.iterdir())
     holdout_match = video_frames[np.random.randint(len(video_frames))]
     logging.debug(f"Holding out match {holdout_match.stem}")
+    clip_path = Path(args.clip_path)
 
-    train_bboxes = []
-    train_frames = []
 
-    for v in [f for f in video_frames if f != holdout_match]:
-        train_video = Video(f"../data/processed/frames/{v}/")
-        train_clips = Clip.from_csv(f"../data/interim/clips/{v}.csv", train_video)
-        train_frames += [f for c in train_clips for f in c.frames][:300]
-        train_bboxes += [b.reshape(4, 2) for c in train_clips for b in c.bboxes][:300]
+    def get_dataset(videos, clip_path):
+        bboxes = []
+        frames = []
+        for video in videos:
+            clips = Clip.from_csv(clip_path / (video.name + ".csv"), video)
+            frames += [f for c in clips for f in c.frames]
+            bboxes += [b.reshape(4, 2) for c in clips for b in c.bboxes]
+        return ImageDatasetBox(frames, bboxes)
+    train_videos = [Video(v) for v in video_frames if v != holdout_match]
+    valid_videos = [Video(v) for v in video_frames if v == holdout_match]
+
     simple_transforms = Compose([Resize(im_size), WrapTransform(transforms.ToTensor())])
-    train_ds = ImageDatasetBox(train_frames, train_bboxes, transform=simple_transforms)
+    train_ds = get_dataset(train_videos, clip_path).with_transfrorms(simple_transforms)
+    valid_ds = get_dataset(train_videos, clip_path).with_transfrorms(simple_transforms)
+    loader = torch.utils.data.DataLoader(data.ConcatDataset([train_ds, valid_ds]),
+                                         batch_size=args.batch_size, shuffle=False)
+    ds_mean, ds_std = src.utils.compute_mean_std(data.ConcatDataset([train_ds, valid_ds]))
+
+    img_transforms = img_transforms = Compose([
+        RandomRotation((-10, 10), expand=True),
+        Resize((int(im_size[0] * 1.), int(im_size[1] * 1.))),
+        RandomHorizontalFlip(0.5),
+        WrapTransform(
+            transforms.ColorJitter(brightness=0.1, hue=0.1, contrast=0.5, saturation=0.5)),
+        WrapTransform(transforms.ToTensor()),
+        WrapTransform(transforms.Normalize(ds_mean.tolist(), ds_std.tolist()))])
+
+    if args.model == 'resnet34':
+        resnet = models.resnet34(pretrained=True)
+        layers = list(resnet.children())
+        head = CornerHead()
+        resnet_chopped = nn.Sequential(*layers[:6])
+        model = nn.Sequential('extractor', resnet_chopped)
+    elif args.model == 'simple':
+        pass
+    else:
+        raise ValueError(f"Model {args.model} not yet supported.")
+
+    model.add_module('classifier', head)
+    utils.freeze(model.extractor.parameters())
+    model = model.to(train_device)
+
+    fake_img = torch.randn(4, 3, im_size[0], im_size[1]).to(train_device)
+    out = model.forward(fake_img)
+    grid_size = tuple(out.shape[-2:])
+
+    train_ds = GridDataset(train_ds.with_transforms(img_transforms), grid_size=grid_size)
+    train_loader = torch.utils.data.DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,
+                                               num_workers=4)
+    valid_ds = GridDataset(valid_ds.with_transforms(img_transforms), grid_size=grid_size)
+    valid_loader = torch.utils.data.DataLoader(valid_ds, batch_size=args.batch_size, shuffle=False,
+                                               num_workers=4)
+
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+    criterion = nn.BCEWithLogitsLoss().to(train_device)
+    optimizer = torch.optim.Adam(trainable_params, lr=args.initital_lr)
+    lr_sched = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.lr_gamma)
+    logging.debug(f"Training {len(trainable_params)} parameters")
+
+    # train(model, criterion, nepochs
+    # model.train(criterion, nepochs, lr_sched)

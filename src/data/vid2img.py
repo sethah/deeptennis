@@ -26,6 +26,7 @@ if __name__ == "__main__":
     parser.add_argument("--vid-name", type=str, default=None)
     parser.add_argument("--img-path", type=str)
     parser.add_argument("--overwrite", action='store_true')
+    parser.add_argument("--vframes", type=int, default=1000)
     parser.set_defaults(overwrite=False)
     args = parser.parse_args()
 
@@ -48,7 +49,8 @@ if __name__ == "__main__":
             logging.info(f"Creating image directory {img_path}.")
             img_path.mkdir(parents=True, exist_ok=True)
 
-        subprocess.call(["ffmpeg", "-i", str(vid), "-vf", "scale=-1:360",
+        subprocess.call(["ffmpeg", "-i", str(vid), "-vframes", str(args.vframes),
+                         "-vf", "scale=640:360",
                          "-r", str(args.fps), str(img_path / "%05d.jpg")])
 
 

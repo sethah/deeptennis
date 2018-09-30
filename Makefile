@@ -31,31 +31,35 @@ data: requirements
 	$(PYTHON_INTERPRETER) src/data/make_dataset.py
 
 bounding_box: extract_action
-	python src/models/court_bounding_boxes.py \
+	python src/features/court_bounding_boxes.py \
 	--mask-path $(DATA_DIR)/interim/action_mask \
 	--save-path $(DATA_DIR)/interim/ \
-	--frames-path $(DATA_DIR)/processed/frames
+	--frames-path $(DATA_DIR)/processed/frames \
+	--meta-file $(PROJECT_DIR)/src/match_meta.txt
 
 extract_action: featurize_frames
-	python src/models/extract_action.py \
+	python src/features/extract_action.py \
 	--features-path $(DATA_DIR)/interim/featurized_frames \
 	--save-path $(DATA_DIR)/interim
 
 featurize_frames : FEATURIZE_PCA = 10
 featurize_frames : BATCH_SIZE = 32
 featurize_frames : frames
-	python src/models/featurize_frames.py \
+	python src/features/featurize_frames.py \
 	--imgs-path $(DATA_DIR)/processed/frames \
 	--save-path $(DATA_DIR)/interim/featurized_frames/ \
 	--gpu $(USE_GPU) \
 	--batch-size $(BATCH_SIZE) \
 	--pca $(FEATURIZE_PCA)
 
+frames : FPS = 1
+frames : VFRAMES = 2000
 frames:
 	python src/data/vid2img.py \
 	--vid-path $(DATA_DIR)/raw/ \
 	--img-path $(DATA_DIR)/processed/frames \
-	--fps 1
+	--fps $(FPS) \
+	--vframes $(VFRAMES)
 
 clean_data_interim:
 	rm -rf $(DATA_DIR)/interim/*

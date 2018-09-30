@@ -6,7 +6,7 @@ import numbers
 from collections import Sequence, Iterable
 from PIL import Image
 
-import torchvision.transforms.functional as F
+import torchvision.transforms.functional as Fv
 
 _pil_interpolation_to_str = {
     Image.NEAREST: 'PIL.Image.NEAREST',
@@ -60,7 +60,7 @@ class RandomRotation(object):
         cols, rows = img.size
         M = cv2.getRotationMatrix2D((cols // 2, rows // 2), angle, 1)
         bbox = np.dot(M, np.concatenate([bbox.T, np.ones((1, 4))])).astype(int).T
-        img = F.rotate(img, angle, self.resample, self.expand, self.center)
+        img = Fv.rotate(img, angle, self.resample, self.expand, self.center)
         cols2, rows2 = img.size
         bbox = bbox + np.array([(cols2 - cols) // 2, (rows2 - rows) // 2])
         return img, bbox
@@ -127,7 +127,7 @@ class Resize(object):
         Returns:
             PIL Image: Rescaled image.
         """
-        resized = F.resize(img, self.size, self.interpolation)
+        resized = Fv.resize(img, self.size, self.interpolation)
         rows1, cols1 = img.size
         rows2, cols2 = resized.size
         return resized, bbox * np.array([rows2 / rows1, cols2 / cols1])
@@ -238,7 +238,7 @@ class RandomAffine(object):
         angle, translations, scale, shear = self.get_params(self.degrees, self.translate,
                                                             self.scale, self.shear, img.size)
 
-        new_img = F.affine(img, angle, translations, scale, shear, resample=self.resample,
+        new_img = Fv.affine(img, angle, translations, scale, shear, resample=self.resample,
                            fillcolor=self.fillcolor)
         return new_img, bbox + np.array(translations)
 
@@ -277,7 +277,7 @@ class CenterCrop(object):
         rows1, cols1 = img.size
         hdiff = self.size[1] - rows1
         wdiff = self.size[0] - cols1
-        return F.center_crop(img, self.size), bbox + np.array([hdiff // 2, wdiff // 2])
+        return Fv.center_crop(img, self.size), bbox + np.array([hdiff // 2, wdiff // 2])
 
     def __repr__(self):
         return self.__class__.__name__ + '(size={0})'.format(self.size)
@@ -320,20 +320,20 @@ class RandomCrop(object):
             PIL Image: Cropped image.
         """
         if self.padding is not None:
-            img = F.pad(img, self.padding, self.fill, self.padding_mode)
+            img = Fv.pad(img, self.padding, self.fill, self.padding_mode)
 
         # pad the width if needed
         if self.pad_if_needed and img.size[0] < self.size[1]:
-            img = F.pad(img, (self.size[1] - img.size[0], 0), self.fill, self.padding_mode)
+            img = Fv.pad(img, (self.size[1] - img.size[0], 0), self.fill, self.padding_mode)
             bbox = bbox - np.array([(self.size[1] - img.size[0]), 0.])
         # pad the height if needed
         if self.pad_if_needed and img.size[1] < self.size[0]:
-            img = F.pad(img, (0, self.size[0] - img.size[1]), self.fill, self.padding_mode)
+            img = Fv.pad(img, (0, self.size[0] - img.size[1]), self.fill, self.padding_mode)
             bbox = bbox - np.array([0, (self.size[0] - img.size[1])])
 
         i, j, h, w = self.get_params(img, self.size)
 
-        return F.crop(img, i, j, h, w), bbox - np.array([j, i])
+        return Fv.crop(img, i, j, h, w), bbox - np.array([j, i])
 
     #         return img, bbox
 
@@ -410,12 +410,12 @@ class RandomResizedCrop(object):
         #         img = crop(img, i, j, h, w)
         #         img = resize(img, size, interpolation)
         #         return F.resized_crop(img, i, j, h, w, self.size, self.interpolation), bbox
-        img = F.crop(img, i, j, h, w)
+        img = Fv.crop(img, i, j, h, w)
         print(i, j, h, w)
         rows1, cols1 = img.size
         cols2, rows2 = self.size
         bbox = bbox * np.array([rows2 / rows1, cols2 / cols1])
-        img = F.resize(img, self.size, self.interpolation)
+        img = Fv.resize(img, self.size, self.interpolation)
         return img, bbox
 
     def __repr__(self):
@@ -448,7 +448,7 @@ class Pad(object):
             PIL Image: Padded image.
         """
         bbox = bbox + np.array(self.padding)
-        return F.pad(img, self.padding, self.fill, self.padding_mode), bbox
+        return Fv.pad(img, self.padding, self.fill, self.padding_mode), bbox
 
     def __repr__(self):
         return self.__class__.__name__ + '(padding={0}, fill={1}, padding_mode={2})'. \
@@ -477,7 +477,7 @@ class BoxCrop(object):
         h2 = int(h * np.random.uniform(1.0, 2.))
         i -= (w2 - w) // 2
         j -= (h2 - h) // 2
-        new_img = F.crop(img, j, i, h2, w2)
+        new_img = Fv.crop(img, j, i, h2, w2)
         if new_img.size[0] == 0 or new_img.size[1] == 0:
             print(i, j, img.size, h2, w2)
             return img, bbox
@@ -526,7 +526,7 @@ class RandomHorizontalFlip(object):
         rows, cols = img.size
         if random.random() < self.p:
             bbox[:, 0] = rows - bbox[:, 0]
-            return F.hflip(img), bbox[np.array([1, 0, 3, 2])]
+            return Fv.hflip(img), bbox[np.array([1, 0, 3, 2])]
         return img, bbox
 
     def __repr__(self):

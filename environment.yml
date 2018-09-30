@@ -9,7 +9,7 @@ dependencies:
 - numpy
 - pandas
 - scipy
-- pytorch
+- pytorch=0.4.1
 - torchvision
 - cookiecutter
 - requests
@@ -26,3 +26,4 @@ dependencies:
 - pip:
   - nltk
   - hmmlearn
+  - pytesseract
