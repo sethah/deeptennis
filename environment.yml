@@ -22,8 +22,7 @@ dependencies:
 - nb_conda
 - pymc3
 - scikit-image
-- umap-learn
 - pip:
   - nltk
-  - hmmlearn
+  - git+https://github.com/hmmlearn/hmmlearn.git
   - pytesseract

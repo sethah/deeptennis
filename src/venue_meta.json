@@ -1,0 +1,29 @@
+{
+  "madrid": {
+    "surface": "clay"
+  },
+  "aus": {
+    "surface": "hard"
+  },
+  "cincinnati": {
+    "surface": "hard"
+  },
+  "montecarlo": {
+    "surface": "clay"
+  },
+  "miami": {
+    "surface": "hard"
+  },
+  "indianwells": {
+    "surface": "hard"
+  },
+  "usopen": {
+    "surface": "hard"
+  },
+  "halle": {
+    "surface": "grass"
+  },
+  "wim": {
+    "surface": "grass"
+  },
+}

@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 import argparse
 from pathlib import Path
@@ -252,61 +253,55 @@ if __name__ == "__main__":
 
     mask_path = Path(args.mask_path)
     frames_path = Path(args.frames_path)
-    save_path = Path(args.save_path) / "clips"
-    if not save_path.exists():
-        save_path.mkdir(parents=True, exist_ok=False)
-    for mask in mask_path.iterdir():
-        match_name = mask.stem
-        save_name = save_path / (match_name + ".csv")
-        if save_name.exists():
-            logging.debug(f"skipping {save_name}")
-            continue
-        action_mask = np.load(mask).astype(int)
-        frame_list = np.array(list(sorted((frames_path / match_name).iterdir())))
+    save_path = Path(args.save_path)
 
-        clips = []
-        for start_idx, end_idx in get_clip_indices(action_mask):
-            clips.append(frame_list[start_idx:end_idx])
-        all_clip_frames = [frame for clip in clips for frame in clip]
+    match_name = mask_path.stem
+    action_mask = np.load(mask_path).astype(int)
+    frame_list = np.array(list(sorted(frames_path.iterdir())))
 
-        sensitivity = match_meta[match_name]['sensitivity']
-        sensitivity = np.array([sensitivity, sensitivity, sensitivity])
-        threshold = match_meta[match_name]['threshold']
-        peak_distance = match_meta[match_name]['peak_distance']
-        percentile = match_meta[match_name]['percentile']
+    clips = []
+    for start_idx, end_idx in get_clip_indices(action_mask):
+        clips.append(frame_list[start_idx:end_idx])
+    all_clip_frames = [frame for clip in clips for frame in clip]
 
-        logging.debug(f"Begin bounding box detection for {match_name}")
-        coords = []
-        for frame in tqdm(all_clip_frames):
-            img = cv2.imread(str(frame))
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            court_outline = get_court_outline(img, 0, sensitivity=sensitivity)
-            x1, x2, y_bot, y_serve = get_baseline(court_outline, peak_distance=peak_distance,
-                                                  percentile=percentile)
-            top_left = get_top_corner(court_outline, x1, x2, y_bot, y_serve)
-            top_right = get_top_corner(court_outline, x1, x2, y_bot, y_serve, left=False)
-            # p1, p2 = get_baseline(court_outline, top=False, peak_distance=peak_distance, percentile=percentile)
-            # p4, p3 = get_baseline(court_outline, top=True, peak_distance=peak_distance, percentile=percentile)
-            p1 = x1, y_bot
-            p2 = x2, y_bot
-            p3 = top_right
-            p4 = top_left
-            proposals = propose_bounding_boxes(p1, p2, p3, p4)
-            coords.append(proposals)
-        coords = np.array(coords)
-        median_area = np.median([get_area(c) for c in coords.reshape(-1, 8)])
+    sensitivity = match_meta[match_name]['sensitivity']
+    sensitivity = np.array([sensitivity, sensitivity, sensitivity])
+    threshold = match_meta[match_name]['threshold']
+    peak_distance = match_meta[match_name]['peak_distance']
+    percentile = match_meta[match_name]['percentile']
 
-        best_boxes = []
-        for proposals in coords:
-            best_idx = np.argmin([abs(get_area(c) - median_area) for c in proposals])
-            best_boxes.append(list(proposals[best_idx]))
-        logging.debug(f"End bounding box detection for {match_name}")
+    logging.debug(f"Begin bounding box detection for {match_name}")
+    coords = []
+    for frame in tqdm(all_clip_frames):
+        img = cv2.imread(str(frame))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        court_outline = get_court_outline(img, 0, sensitivity=sensitivity)
+        x1, x2, y_bot, y_serve = get_baseline(court_outline, peak_distance=peak_distance,
+                                              percentile=percentile)
+        top_left = get_top_corner(court_outline, x1, x2, y_bot, y_serve)
+        top_right = get_top_corner(court_outline, x1, x2, y_bot, y_serve, left=False)
+        # p1, p2 = get_baseline(court_outline, top=False, peak_distance=peak_distance, percentile=percentile)
+        # p4, p3 = get_baseline(court_outline, top=True, peak_distance=peak_distance, percentile=percentile)
+        p1 = x1, y_bot
+        p2 = x2, y_bot
+        p3 = top_right
+        p4 = top_left
+        proposals = propose_bounding_boxes(p1, p2, p3, p4)
+        coords.append(proposals)
+    coords = np.array(coords)
+    median_area = np.median([get_area(c) for c in coords.reshape(-1, 8)])
 
-        with open(save_name, 'w') as csvfile:
-            boxwriter = csv.writer(csvfile, delimiter=',', quotechar='|')
-            frame_idx = 0
-            for clip_idx, clip in enumerate(clips):
-                for frame in clip:
-                    boxwriter.writerow([str(frame.stem), clip_idx] + best_boxes[frame_idx])
-                    frame_idx += 1
+    best_boxes = []
+    for proposals in coords:
+        best_idx = np.argmin([abs(get_area(c) - median_area) for c in proposals])
+        best_boxes.append(list(proposals[best_idx]))
+    logging.debug(f"End bounding box detection for {match_name}")
+
+    with open(save_path, 'w') as csvfile:
+        boxwriter = csv.writer(csvfile, delimiter=',', quotechar='|')
+        frame_idx = 0
+        for clip_idx, clip in enumerate(clips):
+            for frame in clip:
+                boxwriter.writerow([str(frame.stem), clip_idx] + best_boxes[frame_idx])
+                frame_idx += 1
 

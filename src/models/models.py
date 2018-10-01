@@ -59,6 +59,7 @@ class PoseBlock(nn.Module):
         x = self.conv4(x)
         return x
 
+
 class PoseFeatureBlock(nn.Module):
 
     def __init__(self, nin, k):

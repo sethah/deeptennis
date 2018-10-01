@@ -10,6 +10,7 @@ PROFILE = default
 PROJECT_NAME = tennis
 PYTHON_INTERPRETER = python3
 USE_GPU = 0
+DATA_DIR = $(PROJECT_DIR)/data
 
 ifeq (,$(shell which conda))
 HAS_CONDA=False
@@ -30,21 +31,33 @@ requirements: test_environment
 data: requirements
 	$(PYTHON_INTERPRETER) src/data/make_dataset.py
 
-bounding_box: extract_action
+$(DATA_DIR)/interim/clips: $(DATA_DIR)/interim/action_mask
 	python src/features/court_bounding_boxes.py \
 	--mask-path $(DATA_DIR)/interim/action_mask \
 	--save-path $(DATA_DIR)/interim/ \
 	--frames-path $(DATA_DIR)/processed/frames \
 	--meta-file $(PROJECT_DIR)/src/match_meta.txt
 
-extract_action: featurize_frames
+$(DATA_DIR)/interim/clips/%.csv: $(DATA_DIR)/interim/action_mask/%.npy
+	python src/features/court_bounding_boxes2.py \
+	--mask-path $< \
+	--save-path $@ \
+	--frames-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \
+	--meta-file $(PROJECT_DIR)/src/match_meta.txt
+
+$(DATA_DIR)/interim/action_mask: $(DATA_DIR)/interim/featurized_frames
 	python src/features/extract_action.py \
 	--features-path $(DATA_DIR)/interim/featurized_frames \
 	--save-path $(DATA_DIR)/interim
 
-featurize_frames : FEATURIZE_PCA = 10
-featurize_frames : BATCH_SIZE = 32
-featurize_frames : frames
+$(DATA_DIR)/interim/action_mask/%.npy: $(DATA_DIR)/interim/featurized_frames/%.npy
+	python src/features/extract_action2.py \
+	--features-path $< \
+	--save-path $@
+
+$(DATA_DIR)/interim/featurized_frames : FEATURIZE_PCA = 10
+$(DATA_DIR)/interim/featurized_frames : BATCH_SIZE = 32
+$(DATA_DIR)/interim/featurized_frames : $(DATA_DIR)/processed/frames
 	python src/features/featurize_frames.py \
 	--imgs-path $(DATA_DIR)/processed/frames \
 	--save-path $(DATA_DIR)/interim/featurized_frames/ \
@@ -52,14 +65,25 @@ featurize_frames : frames
 	--batch-size $(BATCH_SIZE) \
 	--pca $(FEATURIZE_PCA)
 
-frames : FPS = 1
-frames : VFRAMES = 2000
-frames:
-	python src/data/vid2img.py \
-	--vid-path $(DATA_DIR)/raw/ \
-	--img-path $(DATA_DIR)/processed/frames \
-	--fps $(FPS) \
-	--vframes $(VFRAMES)
+$(DATA_DIR)/interim/featurized_frames/%.npy : $(DATA_DIR)/processed/frames/%
+	python src/features/featurized_frames2.py \
+	--img-path $< \
+	--save-path $@ \
+	--gpu 0 \
+	--batch-size 32 \
+	--pca 10
+
+ALL_VIDEOS=$(wildcard $(DATA_DIR)/raw/*.mp4)
+frames: VFRAMES = 2000
+frames: FPS = 1
+frames: $(addprefix $(DATA_DIR)/processed/frames/, $(basename $(notdir $(ALL_VIDEOS))))
+
+$(DATA_DIR)/processed/frames/%: $(DATA_DIR)/raw/%.mp4
+	python src/data/vid2img2.py \
+	--vid-path $< \
+	--img-path $@ \
+	--fps 1 \
+	--vframes 2000
 
 clean_data_interim:
 	rm -rf $(DATA_DIR)/interim/*

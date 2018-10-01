@@ -2,6 +2,7 @@ import numpy as np
 import argparse
 from pathlib import Path
 import logging
+from logging.config import fileConfig
 
 import torch.nn as nn
 import torch.utils
@@ -13,6 +14,49 @@ from src.data.clip import Clip, Video
 from src.data.dataset import ImageDatasetBox, GridDataset
 from src.vision.transforms import *
 import src.utils as utils
+
+def valid(epoch, model, criterion, loader, device):
+    total_loss = 0.
+    correct = 0.
+    n = len(loader.sampler)
+    model.eval()
+    for inp, targ in loader:
+        inp, targ = inp.to(device), targ.to(device)
+        outs = model.forward(inp)
+        loss = 0.
+        for out in outs:
+            loss += criterion(out, targ)
+        total_loss += loss.item()
+    total_loss /= n
+    print('Train Epoch: {} Validation Loss: {:.6f}'.format(
+        epoch, loss))
+    return loss
+
+def train(epoch, model, loader, optimizer, criterion, device=torch.device("cpu"), log_interval=100, limit_batches=None):
+    model.train()
+    total_loss = 0.
+    n = 0.
+    for batch_idx, (inp, targ) in enumerate(loader):
+        inp, targ = inp.to(device), targ.to(device)
+        optimizer.zero_grad()
+        outs = model.forward(inp)
+        loss = 0.
+        for out in outs:
+            loss += criterion(out, targ)
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.data.item()
+        n += inp.shape[0]
+        if (batch_idx + 1) % log_interval == 0:
+            samples_processed = batch_idx * inp.shape[0]
+            total_samples = len(loader.sampler)
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                epoch, samples_processed, total_samples,
+                100. * batch_idx / len(loader), total_loss / n))
+            total_loss = 0.
+            n = 0.
+        if limit_batches is not None and (batch_idx + 1) >= limit_batches:
+            break
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -29,7 +73,13 @@ if __name__ == "__main__":
     parser.add_argument("--embed-size", type=int, default=32)
     parser.add_argument("--initial-lr", type=float, default=0.001)
     parser.add_argument("--lr-gamma", type=float, default=0.95)
+    parser.add_argument('--model-name', type=str, default="")
+    parser.add_argument('--restore', type=str, default="", help="{'best', 'latest'}")
+    parser.add_argument('--checkpoint-path', type=str, default="")
+    parser.add_argument('--checkpoint-file', type=str, default="")
     args = parser.parse_args()
+
+    fileConfig('logging_config.ini')
 
     im_size = (int(x) for x in args.im_size.split(","))
     train_device = torch.device("cuda:0") if args.gpu else torch.device("cpu")
@@ -100,5 +150,16 @@ if __name__ == "__main__":
     lr_sched = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.lr_gamma)
     logging.debug(f"Training {len(trainable_params)} parameters")
 
-    # train(model, criterion, nepochs
-    # model.train(criterion, nepochs, lr_sched)
+    best_loss = 1000000.
+    for epoch in range(1, args.epochs + 1):
+        train(epoch, model, train_loader, optimizer, device=train_device,
+              log_interval=args.log_interval)
+        loss, acc = valid(epoch, model, valid_loader, device=train_device)
+        if args.checkpoint_path:
+            save_dict = {'model': model.state_dict(),
+                         'optimizer': optimizer.state_dict()}
+            utils.save_checkpoint(args.checkpoint_path, save_dict, model_name=args.model_name)
+            if loss < best_loss:
+                best_loss = loss
+                utils.save_checkpoint(args.checkpoint_path, save_dict,
+                                      model_name=args.model_name, best=True)

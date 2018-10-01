@@ -3,3 +3,14 @@ djokovic,federer,16,aus,100,110,50,90
 djokovic,nadal,18,wim,100,110,50,90
 djokovic,murray,16,french,145,110,15,80
 federer,nadal,17,iw,80,110,30,90
+anderson,federer,18,wim,100,160,50,95
+chung,federer,18,aus,100,110,50,90
+coric,zverev,18,halle,100,110,50,90
+federer,cilic,18,aus,130,0,50,98
+haase,zverev,18,cincinnati,80,110,30,90
+nadal,schwartzman,18,madrid,145,110,15,80
+raonic,dimitrov,18,madrid,80,0,50,95
+thiem,nadal,18,madrid,145,110,15,80
+zverev,isner,18,miami,80,110,30,90
+nadal,tsitsipas,18,barcelona,160,0,50,95
+nadal,nishikori,18,montecarlo,160,0,50,95
