@@ -105,7 +105,7 @@ if __name__ == "__main__":
     simple_transforms = Compose([Resize(im_size), WrapTransform(transforms.ToTensor())])
     train_ds = get_dataset(train_videos, clip_path).with_transfrorms(simple_transforms)
     valid_ds = get_dataset(train_videos, clip_path).with_transfrorms(simple_transforms)
-    loader = torch.utils.data.DataLoader(data.ConcatDataset([train_ds, valid_ds]),
+    loader = torch.utils.data.DataLoamer(data.ConcatDataset([train_ds, valid_ds]),
                                          batch_size=args.batch_size, shuffle=False)
     ds_mean, ds_std = src.utils.compute_mean_std(data.ConcatDataset([train_ds, valid_ds]))
 

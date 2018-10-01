@@ -28,24 +28,16 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    save_path = Path(args.save_path) / "action_mask"
-    if not save_path.exists():
-        save_path.mkdir(parents=True, exist_ok=False)
+    save_path = Path(args.save_path)
 
     features_path = Path(args.features_path)
-    files = [f for f in features_path.iterdir() if f.suffix == ".npy"]
-    for file in files:
-        save_file = save_path / file.name
-        if save_file.exists():
-            logging.debug(f"{save_file} exists. Skipping.")
-            continue
-        X = np.load(str(file))
-        hmm_n_clusters = 2
-        hmm = GaussianHMM(n_components=hmm_n_clusters, covariance_type="diag")
-        hmm.fit(X)
-        hmm_preds = hmm.predict(X)
-        variances = get_cluster_variances(X, hmm_preds, hmm.means_)
-        court_cluster_id = np.argmin(variances)
-        mask = hmm_preds == court_cluster_id
-        np.save(str(save_file), mask)
+    X = np.load(str(features_path))
+    hmm_n_clusters = 2
+    hmm = GaussianHMM(n_components=hmm_n_clusters, covariance_type="diag")
+    hmm.fit(X)
+    hmm_preds = hmm.predict(X)
+    variances = get_cluster_variances(X, hmm_preds, hmm.means_)
+    court_cluster_id = np.argmin(variances)
+    mask = hmm_preds == court_cluster_id
+    np.save(str(save_path), mask)
 

@@ -31,47 +31,27 @@ requirements: test_environment
 data: requirements
 	$(PYTHON_INTERPRETER) src/data/make_dataset.py
 
-$(DATA_DIR)/interim/clips: $(DATA_DIR)/interim/action_mask
-	python src/features/court_bounding_boxes.py \
-	--mask-path $(DATA_DIR)/interim/action_mask \
-	--save-path $(DATA_DIR)/interim/ \
-	--frames-path $(DATA_DIR)/processed/frames \
-	--meta-file $(PROJECT_DIR)/src/match_meta.txt
-
 $(DATA_DIR)/interim/clips/%.csv: $(DATA_DIR)/interim/action_mask/%.npy
-	python src/features/court_bounding_boxes2.py \
+	python src/features/court_bounding_boxes.py \
 	--mask-path $< \
 	--save-path $@ \
 	--frames-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \
 	--meta-file $(PROJECT_DIR)/src/match_meta.txt
 
-$(DATA_DIR)/interim/action_mask: $(DATA_DIR)/interim/featurized_frames
-	python src/features/extract_action.py \
-	--features-path $(DATA_DIR)/interim/featurized_frames \
-	--save-path $(DATA_DIR)/interim
-
 $(DATA_DIR)/interim/action_mask/%.npy: $(DATA_DIR)/interim/featurized_frames/%.npy
-	python src/features/extract_action2.py \
+	python src/features/extract_action.py \
 	--features-path $< \
 	--save-path $@
 
-$(DATA_DIR)/interim/featurized_frames : FEATURIZE_PCA = 10
-$(DATA_DIR)/interim/featurized_frames : BATCH_SIZE = 32
-$(DATA_DIR)/interim/featurized_frames : $(DATA_DIR)/processed/frames
+$(DATA_DIR)/interim/featurized_frames/%.npy : FEATURIZE_PCA = 10
+$(DATA_DIR)/interim/featurized_frames/%.npy : BATCH_SIZE = 32
+$(DATA_DIR)/interim/featurized_frames/%.npy : $(DATA_DIR)/processed/frames/%
 	python src/features/featurize_frames.py \
-	--imgs-path $(DATA_DIR)/processed/frames \
-	--save-path $(DATA_DIR)/interim/featurized_frames/ \
+	--img-path $< \
+	--save-path $@ \
 	--gpu $(USE_GPU) \
 	--batch-size $(BATCH_SIZE) \
 	--pca $(FEATURIZE_PCA)
-
-$(DATA_DIR)/interim/featurized_frames/%.npy : $(DATA_DIR)/processed/frames/%
-	python src/features/featurized_frames2.py \
-	--img-path $< \
-	--save-path $@ \
-	--gpu 0 \
-	--batch-size 32 \
-	--pca 10
 
 ALL_VIDEOS=$(wildcard $(DATA_DIR)/raw/*.mp4)
 frames: VFRAMES = 2000
@@ -79,7 +59,7 @@ frames: FPS = 1
 frames: $(addprefix $(DATA_DIR)/processed/frames/, $(basename $(notdir $(ALL_VIDEOS))))
 
 $(DATA_DIR)/processed/frames/%: $(DATA_DIR)/raw/%.mp4
-	python src/data/vid2img2.py \
+	python src/data/vid2img.py \
 	--vid-path $< \
 	--img-path $@ \
 	--fps 1 \
