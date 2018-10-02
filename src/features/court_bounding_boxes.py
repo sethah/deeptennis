@@ -47,7 +47,8 @@ def get_court_outline(im, threshold=10, sensitivity=[200, 200, 200]):
     _, thresh = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY)
     return thresh
 
-def get_baseline(outline, peak_distance=10, percentile=95):
+
+def get_baseline(outline, peak_distance=10):
     """
     Starting from the top, look for rows of pixels that contain
     lots of non-zero values. This should peak for each horizontal
@@ -64,26 +65,39 @@ def get_baseline(outline, peak_distance=10, percentile=95):
     if len(pks) < 2:
         return 0, 0, 0, 0
     srtd = np.argsort(z[pks] * -1)
-    bottom_baseline_idx = pks[srtd[0]]
-    bottom_service_idx = pks[srtd[1]]
+    bottom_baseline_idx = pks[1]
+    bottom_service_idx = pks[0]
+    # # make sure service line is above the baseline
+    # srtd = [idx for idx in srtd[1:] if idx < srtd[0]]
+    # if len(srtd) == 0:
+    #     srtd = [0]
+    # # bottom_service_idx = pks[1]
     bottom_baseline_idx += halfway
     bottom_service_idx += halfway
     pixel_window = 5
-    best_x1 = np.argmax(outline[bottom_baseline_idx])
     window_top = min(bottom_baseline_idx + pixel_window, outline.shape[0])
     window_bottom = max(bottom_baseline_idx - pixel_window, 0)
-    for i in range(window_bottom, window_top):
-        tmp = np.argmax(outline[i])
-        if tmp > 0:
-            best_x1 = min(best_x1, tmp)
-    outline_flipped = np.fliplr(outline)
-    best_x2 = np.argmax(outline_flipped[bottom_baseline_idx])
-    for i in range(window_bottom, window_top):
-        tmp = np.argmax(outline_flipped[i])
-        if tmp > 0:
-            best_x2 = min(best_x2, tmp)
-    best_x2 = outline.shape[1] - best_x2
-    return best_x1, best_x2, bottom_baseline_idx, bottom_service_idx
+    cropped = outline[window_bottom:window_top, :]
+    cropped_sum = cropped.sum(axis=0) >= 2 * 255
+    x1 = np.argmax(cropped_sum)
+    x2 = outline.shape[1] - np.argmax(cropped_sum[::-1]) - 1
+    bottom_y1 = np.argmax(cropped[:, x1]) + window_bottom
+    bottom_y2 = np.argmax(cropped[:, x2]) + window_bottom
+
+    # for i in range(window_bottom, window_top):
+    #     tmp = np.argmax(outline[i])
+    #     if tmp > 0:
+    #         print(best_x1, tmp)
+    #         best_x1 = min(best_x1, tmp)
+    #
+    # outline_flipped = np.fliplr(outline)
+    # best_x2 = np.argmax(outline_flipped[bottom_baseline_idx])
+    # for i in range(window_bottom, window_top):
+    #     tmp = np.argmax(outline_flipped[i])
+    #     if tmp > 0:
+    #         best_x2 = min(best_x2, tmp)
+    # best_x2 = outline.shape[1] - best_x2
+    return x1, x2, bottom_y1, bottom_y2, bottom_service_idx
 
 
 def compute_slope(zoom, p0):
@@ -98,12 +112,13 @@ def compute_slope(zoom, p0):
     slopes = slopes[np.isfinite(slopes)]
     if len(slopes) == 0:
         return 0
+    # print(slopes)
     return np.median(slopes)
     # pcts = np.percentile(slopes, [25, 75])
     # return np.mean(slopes[(slopes >= pcts[0]) & (slopes <= pcts[1])])
 
 
-def get_slope(court_outline, y_bot, x_bot, crops=[50, 10, 20, 50], flip=False):
+def get_slope(court_outline, y_bot, x_bot, crops=(70, 10, 20, 70), flip=False):
     """
     Zoom in on the lower corners of the court, and compute the slope of the sidelines
     :param court_outline:
@@ -233,9 +248,9 @@ def propose_bounding_boxes(p1, p2, p3, p4):
     return proposals
 
 def get_area(crd):
-    a = abs(crd[5] - crd[7])
+    a = abs(crd[4] - crd[6])
     b = abs(crd[0] - crd[2])
-    h = abs(crd[6] - crd[1])
+    h = abs(crd[7] - crd[1])
     return 0.5 * (a + b) * h
 
 if __name__ == "__main__":
@@ -266,35 +281,53 @@ if __name__ == "__main__":
 
     sensitivity = match_meta[match_name]['sensitivity']
     sensitivity = np.array([sensitivity, sensitivity, sensitivity])
-    threshold = match_meta[match_name]['threshold']
     peak_distance = match_meta[match_name]['peak_distance']
-    percentile = match_meta[match_name]['percentile']
+    crop_top = match_meta[match_name]['crop_top']
+    crop_left = match_meta[match_name]['crop_left']
+    crop_right = match_meta[match_name]['crop_right']
+    crop_bottom = match_meta[match_name]['crop_bottom']
 
     logging.debug(f"Begin bounding box detection for {match_name}")
     coords = []
+    invalids = 0
     for frame in tqdm(all_clip_frames):
         img = cv2.imread(str(frame))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        court_outline = get_court_outline(img, 0, sensitivity=sensitivity)
-        x1, x2, y_bot, y_serve = get_baseline(court_outline, peak_distance=peak_distance,
-                                              percentile=percentile)
-        top_left = get_top_corner(court_outline, x1, x2, y_bot, y_serve)
-        top_right = get_top_corner(court_outline, x1, x2, y_bot, y_serve, left=False)
-        # p1, p2 = get_baseline(court_outline, top=False, peak_distance=peak_distance, percentile=percentile)
-        # p4, p3 = get_baseline(court_outline, top=True, peak_distance=peak_distance, percentile=percentile)
-        p1 = x1, y_bot
-        p2 = x2, y_bot
+        court_outline = get_court_outline(img, 10, sensitivity=sensitivity)
+        im_h, im_w = court_outline.shape
+        cropped_outline = court_outline[crop_top:im_h - crop_bottom, crop_left:im_w - crop_right]
+        x1, x2, y1_bot, y2_bot, y_serve = get_baseline(cropped_outline, peak_distance=peak_distance)
+        x1 += crop_left
+        x2 += crop_left
+        y1_bot += crop_top
+        y2_bot += crop_top
+        y_serve += crop_top
+        top_left = get_top_corner(court_outline, x1, x2, y1_bot, y_serve)
+        top_right = get_top_corner(court_outline, x1, x2, y2_bot, y_serve, left=False)
+        p1 = x1, y1_bot
+        p2 = x2, y2_bot
         p3 = top_right
         p4 = top_left
+        if not utils.validate_court_box(p1, p2, p3, p4, im_w, im_h):
+            invalids += 1
+        #     p1, p2, p3, p4 = (0, 0), (0, 0), (0, 0), (0, 0)
         proposals = propose_bounding_boxes(p1, p2, p3, p4)
         coords.append(proposals)
+    logging.debug(f"{invalids}/{len(all_clip_frames)} were invalid")
     coords = np.array(coords)
     median_area = np.median([get_area(c) for c in coords.reshape(-1, 8)])
 
     best_boxes = []
     for proposals in coords:
-        best_idx = np.argmin([abs(get_area(c) - median_area) for c in proposals])
-        best_boxes.append(list(proposals[best_idx]))
+        # ensure that it always chooses a valid proposal if it exists
+        filtered = [p for p in proposals if
+                    utils.validate_court_box(*np.array(p).reshape(4, 2), im_w, im_h)]
+        if len(filtered) == 0:
+            # no valid proposals
+            best_boxes.append(list(proposals[0]))
+        else:
+            best_idx = np.argmin([abs(get_area(c) - median_area) for c in filtered])
+            best_boxes.append(list(filtered[best_idx]))
     logging.debug(f"End bounding box detection for {match_name}")
 
     with open(save_path, 'w') as csvfile:

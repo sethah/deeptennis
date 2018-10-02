@@ -31,6 +31,8 @@ requirements: test_environment
 data: requirements
 	$(PYTHON_INTERPRETER) src/data/make_dataset.py
 
+ALL_VIDEOS=$(wildcard $(DATA_DIR)/raw/*.mp4)
+clips: $(addprefix $(DATA_DIR)/interim/clips/, $(addsuffix .csv, $(basename $(notdir $(ALL_VIDEOS)))))
 $(DATA_DIR)/interim/clips/%.csv: $(DATA_DIR)/interim/action_mask/%.npy
 	python src/features/court_bounding_boxes.py \
 	--mask-path $< \
@@ -38,11 +40,20 @@ $(DATA_DIR)/interim/clips/%.csv: $(DATA_DIR)/interim/action_mask/%.npy
 	--frames-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \
 	--meta-file $(PROJECT_DIR)/src/match_meta.txt
 
+clip_videos: $(addprefix $(DATA_DIR)/interim/match_clips_video/, $(notdir $(ALL_VIDEOS)))
+$(DATA_DIR)/interim/match_clips_video/%.mp4: $(DATA_DIR)/interim/clips/%.csv
+	python src/data/clips2vid.py \
+	--clip-path $< \
+	--save-path $@ \
+	--frame-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \
+
+.PRECIOUS: $(DATA_DIR)/interim/action_mask/%.npy
 $(DATA_DIR)/interim/action_mask/%.npy: $(DATA_DIR)/interim/featurized_frames/%.npy
 	python src/features/extract_action.py \
 	--features-path $< \
 	--save-path $@
 
+.PRECIOUS: $(DATA_DIR)/interim/featurized_frames/%.npy
 $(DATA_DIR)/interim/featurized_frames/%.npy : FEATURIZE_PCA = 10
 $(DATA_DIR)/interim/featurized_frames/%.npy : BATCH_SIZE = 32
 $(DATA_DIR)/interim/featurized_frames/%.npy : $(DATA_DIR)/processed/frames/%
@@ -53,7 +64,6 @@ $(DATA_DIR)/interim/featurized_frames/%.npy : $(DATA_DIR)/processed/frames/%
 	--batch-size $(BATCH_SIZE) \
 	--pca $(FEATURIZE_PCA)
 
-ALL_VIDEOS=$(wildcard $(DATA_DIR)/raw/*.mp4)
 frames: VFRAMES = 2000
 frames: FPS = 1
 frames: $(addprefix $(DATA_DIR)/processed/frames/, $(basename $(notdir $(ALL_VIDEOS))))

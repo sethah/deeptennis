@@ -60,9 +60,11 @@ def get_match_metadata(path):
     for i, row in df.iterrows():
         name = "_".join([str(x) for x in [row['player1'], row['player2'], row['venue'], row['year']]])
         d[name] = {'sensitivity': row['sensitivity'],
-                   'threshold': row['threshold'],
                    'peak_distance': row['peak_distance'],
-                    'percentile': row['percentile']}
+                   'crop_left': row['crop_left'],
+                   'crop_right': row['crop_right'],
+                   'crop_top': row['crop_top'],
+                    'crop_bottom': row['crop_bottom']}
     return d
 
 
@@ -107,3 +109,36 @@ def load_checkpoint(checkpoint_dir, model_name=None, checkpoint_file=None, best=
     loaded = torch.load(load_path)
     logging.info(f"Loaded checkpoint from {load_path.resolve().as_uri()}")
     return loaded
+
+
+def get_court_area(p1, p2, p3, p4):
+    a = abs(p3[0] - p4[0])
+    b = abs(p1[0] - p2[0])
+    h = abs(p1[1] - p4[1])
+    return 0.5 * (a + b) * h
+
+
+def validate_court_box(p1, p2, p3, p4, im_w, im_h, bot_width_tol=(0.4, 0.9),
+                       top_width_tol=(0.1, 0.8), height_tol=(0.1,0.8), area_tol=(0.2,0.7)):
+
+    valid = True
+    bot_width = abs(p1[0] - p2[0])
+    top_width = abs(p3[0] - p4[0])
+    valid &= bot_width > im_w * bot_width_tol[0] and bot_width < im_w * bot_width_tol[1]
+    valid &= top_width < bot_width and top_width > top_width_tol[0] * im_w and top_width < top_width_tol[1] * im_w
+
+    # baselines are mostly horizontal
+    valid &= abs(p1[1] - p2[1]) < im_h * 0.02
+    valid &= abs(p3[1] - p4[1]) < im_h * 0.02
+
+    valid &= p3[0] > p4[0]
+    valid &= p2[0] > p1[0]
+
+    valid &= (p1[1] - p4[1] > im_h * height_tol[0]) and (p1[1] - p4[1] < im_h * height_tol[1])
+    valid &= (p2[1] - p3[1] > im_h * height_tol[0]) and (p2[1] - p3[1] < im_h * height_tol[1])
+
+    area = get_court_area(p1, p2, p3, p4)
+    valid &= area > area_tol[0] * (im_w * im_h) and area < area_tol[1] * (im_h * im_w)
+
+    return valid
+
