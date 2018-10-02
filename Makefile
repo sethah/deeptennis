@@ -53,6 +53,7 @@ $(DATA_DIR)/interim/action_mask/%.npy: $(DATA_DIR)/interim/featurized_frames/%.n
 	--features-path $< \
 	--save-path $@
 
+featurized: $(addprefix $(DATA_DIR)/interim/featurized_frames/, $(addsuffix .npy, $(basename $(notdir $(ALL_VIDEOS)))))
 .PRECIOUS: $(DATA_DIR)/interim/featurized_frames/%.npy
 $(DATA_DIR)/interim/featurized_frames/%.npy : FEATURIZE_PCA = 10
 $(DATA_DIR)/interim/featurized_frames/%.npy : BATCH_SIZE = 32
