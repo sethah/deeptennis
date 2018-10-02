@@ -29,6 +29,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     save_path = Path(args.save_path)
+    if not save_path.parent.exists():
+        save_path.parent.mkdir()
 
     features_path = Path(args.features_path)
     X = np.load(str(features_path))

@@ -66,12 +66,14 @@ class PoseFeatureBlock(nn.Module):
         super(PoseFeatureBlock, self).__init__()
         self.conv1 = StdConv(nin + k, nin, 9, padding=4)
         self.conv2 = StdConv(nin, nin, 9, padding=4)
-        self.conv3 = nn.Conv2d(nin, k, 1, padding=0)
+        self.conv3 = StdConv(nin, nin, 9, padding=4)
+        self.conv4 = nn.Conv2d(nin, k, 1, padding=0)
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.conv3(x)
+        x = self.conv4(x)
         return x
 
 
@@ -86,6 +88,7 @@ class SimplePose(nn.Module):
             self.poses.add_module("pose%d" % i, PoseBlock(3, nout))
 
         self.feat1 = nn.Sequential(StdConv(nout, nout, 9, padding=4),
+                                   StdConv(nout, nout, 9, padding=4),
                                    StdConv(nout, nout, 9, padding=4),
                                    nn.Conv2d(nout, k, 1, padding=0))
 
@@ -148,8 +151,6 @@ class up(nn.Module):
     def __init__(self, in_ch, out_ch, bilinear=False):
         super(up, self).__init__()
 
-        #  would be a nice idea if the upsampling could be learned too,
-        #  but my machine do not have enough memory to handle all those weights
         if bilinear:
             self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
         else:

@@ -1,6 +1,6 @@
 player1,player2,year,venue,sensitivity,peak_distance,crop_left,crop_right,crop_bottom,crop_top
 djokovic,federer,16,aus,100,50,0,0,0,0
-djokovic,nadal,18,wim,100,50,0,0,0,0
+djokovic,nadal,18,wim,140,50,0,0,0,0
 djokovic,murray,16,french,145,15,0,0,0,0
 federer,nadal,17,iw,140,50,0,0,0,0
 nadal,tsitsipas,18,barcelona,160,50,0,0,0,0

@@ -34,6 +34,9 @@ class ImageDataset(torch.utils.data.Dataset):
 
 
 class ImageDatasetBox(torch.utils.data.Dataset):
+    """
+    A dataset that also applies transforms to a bounding polygon.
+    """
 
     def __init__(self, files, labels=None, transform=None):
         self.transform = transform

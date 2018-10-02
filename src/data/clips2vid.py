@@ -1,7 +1,6 @@
 import argparse
 import logging
 from logging.config import fileConfig
-import numpy as np
 import os
 from pathlib import Path
 import shutil
@@ -35,7 +34,6 @@ if __name__ == "__main__":
     for clip_idx, clip in enumerate(clips):
         for bbox, frame in zip(clip.bboxes, clip.frames):
             img = cv2.imread(str(frame))
-            # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             font = cv2.FONT_HERSHEY_SIMPLEX
             bottomLeftCornerOfText = (100, 100)
             fontScale = 1

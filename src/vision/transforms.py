@@ -402,16 +402,10 @@ class RandomResizedCrop(object):
             PIL Image: Randomly cropped and resized image.
         """
         i, j, h, w = self.get_params(img, self.scale, self.ratio)
-        #         resized =  F.resize(img, self.size, self.interpolation)
 
         bbox = bbox - np.array([j, i])
 
-        #         return F.crop(img, i, j, h, w), bbox - np.array([j, i])
-        #         img = crop(img, i, j, h, w)
-        #         img = resize(img, size, interpolation)
-        #         return F.resized_crop(img, i, j, h, w, self.size, self.interpolation), bbox
         img = Fv.crop(img, i, j, h, w)
-        print(i, j, h, w)
         rows1, cols1 = img.size
         cols2, rows2 = self.size
         bbox = bbox * np.array([rows2 / rows1, cols2 / cols1])

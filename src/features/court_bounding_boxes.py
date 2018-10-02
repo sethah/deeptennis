@@ -15,26 +15,6 @@ import csv
 from src import utils
 
 
-def get_court_outline_old(im, threshold=140, connectivity=4, sensitivity=100):
-    im = cv2.cvtColor(im, cv2.COLOR_RGB2HSV)
-    lower_white = np.array([0, 0, 255-sensitivity])
-    upper_white = np.array([255, sensitivity, 255])
-
-    # Threshold the HSV image to get only white colors
-    mask = cv2.inRange(im, lower_white, upper_white)
-    # Bitwise-AND mask and original image
-    white = cv2.bitwise_and(im, im, mask= mask)
-    gray = cv2.cvtColor(cv2.cvtColor(white, cv2.COLOR_HSV2RGB), cv2.COLOR_RGB2GRAY)
-    _, thresh = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY)
-    output = cv2.connectedComponentsWithStats(thresh, connectivity, cv2.CV_32S)
-    c = Counter(output[1].ravel())
-
-    # the court component should always contain the second most pixels for
-    # action shots
-    court_idx = c.most_common()[1][0]
-    connected = (output[1] == court_idx)
-    return connected
-
 def get_court_outline(im, threshold=10, sensitivity=[200, 200, 200]):
     lower_white = np.array(sensitivity, dtype=np.uint8)
     upper_white = np.array([255,255,255], dtype=np.uint8)
@@ -50,12 +30,7 @@ def get_court_outline(im, threshold=10, sensitivity=[200, 200, 200]):
 
 def get_baseline(outline, peak_distance=10):
     """
-    Starting from the top, look for rows of pixels that contain
-    lots of non-zero values. This should peak for each horizontal
-    line. The first/last of these should be the top/bottom baseline.
-
-    The x coordinate of the top baseline is just the index of the first
-    non-zero pixel in that row.
+    Detect the bottom baseline and bottom service line from a thresholded image outline.
     """
     z = np.sum(outline, axis=1)
     halfway = z.shape[0] // 2
@@ -64,14 +39,9 @@ def get_baseline(outline, peak_distance=10):
 
     if len(pks) < 2:
         return 0, 0, 0, 0
-    srtd = np.argsort(z[pks] * -1)
+    # take the first two peaks to be the service and baseline
     bottom_baseline_idx = pks[1]
     bottom_service_idx = pks[0]
-    # # make sure service line is above the baseline
-    # srtd = [idx for idx in srtd[1:] if idx < srtd[0]]
-    # if len(srtd) == 0:
-    #     srtd = [0]
-    # # bottom_service_idx = pks[1]
     bottom_baseline_idx += halfway
     bottom_service_idx += halfway
     pixel_window = 5
@@ -83,20 +53,6 @@ def get_baseline(outline, peak_distance=10):
     x2 = outline.shape[1] - np.argmax(cropped_sum[::-1]) - 1
     bottom_y1 = np.argmax(cropped[:, x1]) + window_bottom
     bottom_y2 = np.argmax(cropped[:, x2]) + window_bottom
-
-    # for i in range(window_bottom, window_top):
-    #     tmp = np.argmax(outline[i])
-    #     if tmp > 0:
-    #         print(best_x1, tmp)
-    #         best_x1 = min(best_x1, tmp)
-    #
-    # outline_flipped = np.fliplr(outline)
-    # best_x2 = np.argmax(outline_flipped[bottom_baseline_idx])
-    # for i in range(window_bottom, window_top):
-    #     tmp = np.argmax(outline_flipped[i])
-    #     if tmp > 0:
-    #         best_x2 = min(best_x2, tmp)
-    # best_x2 = outline.shape[1] - best_x2
     return x1, x2, bottom_y1, bottom_y2, bottom_service_idx
 
 
@@ -112,10 +68,7 @@ def compute_slope(zoom, p0):
     slopes = slopes[np.isfinite(slopes)]
     if len(slopes) == 0:
         return 0
-    # print(slopes)
     return np.median(slopes)
-    # pcts = np.percentile(slopes, [25, 75])
-    # return np.mean(slopes[(slopes >= pcts[0]) & (slopes <= pcts[1])])
 
 
 def get_slope(court_outline, y_bot, x_bot, crops=(70, 10, 20, 70), flip=False):
@@ -165,42 +118,12 @@ def get_top_corner(outline, bottom_x1, bottom_x2, bottom_y, serve_y, left=True):
     serve_x = x4 if left else x3
     AV = np.sqrt((bottom_x - Vx)**2 + (bottom_y - Vy)**2)
     AB = np.sqrt((bottom_x - serve_x)**2 + (bottom_y - serve_y)**2)
-    C = 78. / 60
+    C = 78. / 60  # dimensions of a real tennis court
     l = (AV - AB) * AB / (AV * C - (AV - AB))
     theta = np.arctan(-1 / slope)
     x_top = serve_x + l * np.sin(theta) * (1 if left else -1)
     y_top = serve_y - l * np.cos(theta)
     return x_top, y_top
-
-
-def get_baseline_old(outline, top, peak_distance=10, percentile=95):
-    """
-    Starting from the top, look for rows of pixels that contain
-    lots of non-zero values. This should peak for each horizontal
-    line. The first/last of these should be the top/bottom baseline.
-
-    The x coordinate of the top baseline is just the index of the first
-    non-zero pixel in that row.
-    """
-    z = np.sum(outline, axis=1)
-    halfway = z.shape[0] // 2
-    if top:
-        z = z[:halfway]
-    else:
-        z = z[halfway:]
-    pks = sig.find_peaks(z, distance=peak_distance)[0]
-    pct = np.percentile(z, [percentile])[0]
-    pk_idx = 0 if top else -1
-    tall_peaks = list(filter(lambda x: z[x] > pct, pks))
-    if len(tall_peaks) == 0:
-        return (0, 0), (0, 0)
-    pk_y = tall_peaks[pk_idx]
-    if not top:
-        pk_y += halfway
-    x1 = np.argmax(outline[pk_y])
-    x2 = outline.shape[1] - np.argmax(np.fliplr(outline)[pk_y])
-    y1 = y2 = pk_y
-    return (x1, y1), (x2, y2)
 
 
 def leave_one_out(p1, p2, p3):
@@ -231,7 +154,6 @@ def get_clip_indices(mask):
     if action_mask[-1] == 1:
         ends = np.concatenate([ends, [action_mask.shape[0]]])
 
-    # assert starts.shape[0] == ends.shape[0]
     return list(zip(starts + 1, ends + 1))
 
 
@@ -246,6 +168,7 @@ def propose_bounding_boxes(p1, p2, p3, p4):
         proposals.append(list(itertools.chain(*vertices)))
         vertices = verts.copy()
     return proposals
+
 
 def get_area(crd):
     a = abs(crd[4] - crd[6])
@@ -269,6 +192,8 @@ if __name__ == "__main__":
     mask_path = Path(args.mask_path)
     frames_path = Path(args.frames_path)
     save_path = Path(args.save_path)
+    if not save_path.parent.exists():
+        save_path.parent.mkdir()
 
     match_name = mask_path.stem
     action_mask = np.load(mask_path).astype(int)
@@ -310,7 +235,6 @@ if __name__ == "__main__":
         p4 = top_left
         if not utils.validate_court_box(p1, p2, p3, p4, im_w, im_h):
             invalids += 1
-        #     p1, p2, p3, p4 = (0, 0), (0, 0), (0, 0), (0, 0)
         proposals = propose_bounding_boxes(p1, p2, p3, p4)
         coords.append(proposals)
     logging.debug(f"{invalids}/{len(all_clip_frames)} were invalid")

@@ -72,8 +72,8 @@ $(DATA_DIR)/processed/frames/%: $(DATA_DIR)/raw/%.mp4
 	python src/data/vid2img.py \
 	--vid-path $< \
 	--img-path $@ \
-	--fps 1 \
-	--vframes 2000
+	--fps $(FPS) \
+	--vframes $(VFRAMES)
 
 clean_data_interim:
 	rm -rf $(DATA_DIR)/interim/*
