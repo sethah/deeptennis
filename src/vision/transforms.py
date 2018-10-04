@@ -1,4 +1,5 @@
 import numpy as np
+import itertools
 import cv2
 import random
 import math
@@ -6,6 +7,9 @@ import numbers
 from collections import Sequence, Iterable
 from PIL import Image
 
+from sklearn.metrics.pairwise import rbf_kernel
+
+import torch
 import torchvision.transforms.functional as Fv
 
 _pil_interpolation_to_str = {
@@ -525,3 +529,48 @@ class RandomHorizontalFlip(object):
 
     def __repr__(self):
         return self.__class__.__name__ + '(p={})'.format(self.p)
+
+
+class BoxToGrid(object):
+
+    def __init__(self, grid_size):
+        self.grid_size = grid_size
+
+    def __call__(self, img_t, bbox_t):
+        gsize = torch.IntTensor(self.grid_size).double()
+        im_size = torch.tensor(img_t.size()[1:]).double()
+        grid_coords = (bbox_t / (im_size / gsize)).long()
+        n_coords = 4
+        grid = torch.zeros([n_coords] + gsize.long().tolist())
+        for i, coord in enumerate(grid_coords):
+            c = coord.numpy()
+            if np.all(c >= 0) and np.all(c < np.array(self.grid_size)):
+                grid[i, c[1], c[0]] = 1.
+        return img_t, grid
+
+
+class BoxToHeatmap(object):
+
+    def __init__(self, grid_size, gamma):
+        self.grid_size = grid_size
+        self.gamma = gamma
+
+    def __call__(self, img_t, bbox_t):
+        im_size = tuple(img_t.shape[-2:])
+        ind = np.array(list(itertools.product(range(im_size[0]), range(im_size[1]))))
+        class_maps = []
+        for coord in bbox_t:
+            c = coord.numpy()
+            if np.all(c >= 0) and np.all(c < np.array(im_size)):
+                hmap = BoxToHeatmap._place_gaussian(c[::-1], self.gamma, ind,
+                                                    im_size[0], im_size[1])
+                hmap[hmap > 1] = 1.
+                hmap[hmap < 0.0099] = 0.
+                class_maps.append(cv2.resize(hmap, self.grid_size))
+            else:
+                class_maps.append(np.zeros(self.grid_size))
+        return img_t, torch.tensor(class_maps, dtype=torch.float32)
+
+    @staticmethod
+    def _place_gaussian(mean, gamma, ind, height, width):
+        return rbf_kernel(ind, np.array(mean).reshape(1, 2), gamma=gamma).reshape(height, width)

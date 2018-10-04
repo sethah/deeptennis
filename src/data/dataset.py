@@ -3,12 +3,18 @@ from PIL import Image
 import itertools
 import cv2
 
+import logging
+
 from sklearn.metrics.pairwise import rbf_kernel
 
 import torch
+import torchvision.transforms as transforms
+
+from src.data.clip import Clip, Video
+import src.utils as utils
 
 
-class ImageDataset(torch.utils.data.Dataset):
+class ImageFilesDataset(torch.utils.data.Dataset):
 
     def __init__(self, files, labels=None, transform=None):
         self.transform = transform
@@ -32,21 +38,36 @@ class ImageDataset(torch.utils.data.Dataset):
     def get_file_id(file):
         return int(file.name.split(".")[0])
 
+    def with_transforms(self, tfms):
+        return ImageFilesDataset(self.files, self.labels, transform=tfms)
 
-class ImageDatasetBox(torch.utils.data.Dataset):
+    def statistics(self):
+        """
+        Compute the mean and standard deviation for each image channel.
+        """
+        std_transforms = transforms.Compose([transforms.ToTensor()])
+        _ds = self.with_transforms(std_transforms)
+        tsum = 0.
+        tcount = 0.
+        tsum2 = 0.
+        for i in range(len(_ds)):
+            im = _ds[i]
+            im = im.view(im.shape[0], -1)
+            tsum = tsum + im.sum(dim=1)
+            tcount = tcount + im.shape[1]
+            tsum2 = tsum2 + (im * im).sum(dim=1)
+        mean = tsum / tcount
+        std = torch.sqrt(tsum2 / tcount - mean ** 2)
+        return mean, std
+
+
+class ImageFilesDatasetBox(ImageFilesDataset):
     """
     A dataset that also applies transforms to a bounding polygon.
     """
 
-    def __init__(self, files, labels=None, transform=None):
-        self.transform = transform
-        self.files = files
-        self.labels = np.zeros(len(files)) if labels is None else labels
-
-    def __len__(self):
-        return len(self.files)
-
     def __getitem__(self, idx):
+        # TODO: store labels as torch tensors
         file = self.files[idx]
         label = self.labels[idx]
         with open(file, 'rb') as f:
@@ -54,15 +75,10 @@ class ImageDatasetBox(torch.utils.data.Dataset):
             sample = img.convert('RGB')
         if self.transform is not None:
             sample, label = self.transform(sample, label)
-        return sample, torch.from_numpy(label)
+        return sample, label
 
-    def with_transforms(self, transforms):
-        self.transform = transforms
-        return self
-
-    @staticmethod
-    def get_file_id(file):
-        return int(file.name.split(".")[0])
+    def with_transforms(self, tfms):
+        return ImageFilesDatasetBox(self.files, self.labels, transform=tfms)
 
 
 class GridDataset(torch.utils.data.Dataset):
@@ -116,3 +132,27 @@ class HeatmapDataset(torch.utils.data.Dataset):
     @staticmethod
     def _place_gaussian(mean, gamma, ind, height, width):
         return rbf_kernel(ind, np.array(mean).reshape(1, 2), gamma=gamma).reshape(height, width)
+
+
+def get_bounding_box_dataset(videos, clip_path, filter_valid=False, max_frames=None):
+    bboxes = []
+    frames = []
+    for video in videos:
+        clips = Clip.from_csv(clip_path / (video.name + ".csv"), video)
+        invalid = 0
+        cnt = 0
+        for clip in clips:
+            img = cv2.imread(str(clip.frames[0]))
+            im_h, im_w, _ = img.shape
+            for frame, bbox in zip(clip.frames, clip.bboxes):
+                if filter_valid and not utils.validate_court_box(*bbox.reshape(4,2), im_w, im_h):
+                    invalid += 1
+                    continue
+                else:
+                    cnt += 1
+                    frames.append(frame)
+                    bboxes.append(bbox.reshape(4, 2))
+                if max_frames and cnt > max_frames:
+                    break
+        logging.debug(f"Filtered {invalid} invalid frames for {video.name}")
+    return ImageFilesDatasetBox(frames, bboxes)

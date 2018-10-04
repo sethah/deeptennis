@@ -2,6 +2,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+class KeypointModel(nn.Module):
+
+    def __init__(self, keypoints, channels):
+        super().__init__()
+        self.keypoints = keypoints
+        self.channels = channels
+
+    def predict(self, x):
+        return self.forward(x)
+
+
 
 class StdConv(nn.Module):
 
@@ -15,24 +26,14 @@ class StdConv(nn.Module):
         return self.drop(self.bn(F.relu(self.conv(x))))
 
 
-class CornerHead(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.classifier = nn.Sequential(nn.ReLU(), nn.Dropout(0.25), StdConv(128, 128),
-                                        StdConv(128, 128), nn.Conv2d(128, 4, 3, padding=1))
-
-    def forward(self, x):
-        return self.classifier(x)
-
-
-class SimpleConvNet(nn.Module):
-    def __init__(self):
-        super(SimpleConvNet, self).__init__()
-        self.conv1 = StdConv(3, 32, stride=1)
+class SimpleConvNet(KeypointModel):
+    def __init__(self, keypoints, channels):
+        super(SimpleConvNet, self).__init__(keypoints, channels)
+        self.conv1 = StdConv(channels, 32, stride=1)
         self.conv2 = StdConv(32, 32, stride=2)
         self.conv3 = StdConv(32, 64, stride=1)
         self.conv4 = StdConv(64, 64, stride=2)
-        self.out = nn.Conv2d(64, 4, 3)
+        self.out = nn.Conv2d(64, keypoints, 3)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -44,53 +45,58 @@ class SimpleConvNet(nn.Module):
 
 class PoseBlock(nn.Module):
 
-    def __init__(self, nin, nout):
+    def __init__(self, nin, nout, kernel_size=7):
         super(PoseBlock, self).__init__()
         n_middle = nout // 2
-        self.conv1 = StdConv(nin, n_middle, kernel_size=7, stride=1, padding=3)
+        self.conv1 = StdConv(nin, n_middle, kernel_size=kernel_size, stride=1, padding=kernel_size // 2)
         self.conv2 = StdConv(n_middle, n_middle, kernel_size=3, stride=2)
-        self.conv3 = StdConv(n_middle, nout, kernel_size=7, stride=1, padding=3)
-        self.conv4 = StdConv(nout, nout, kernel_size=3, stride=2)
+        self.conv3 = StdConv(n_middle, n_middle, kernel_size=kernel_size, stride=1, padding=kernel_size // 2)
+        self.conv4 = StdConv(n_middle, n_middle, kernel_size=3, stride=2)
+        self.conv5 = StdConv(n_middle, nout, kernel_size=kernel_size, stride=1, padding=kernel_size // 2)
+        self.conv6 = StdConv(nout, nout, kernel_size=3, stride=2)
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.conv3(x)
         x = self.conv4(x)
+        x = self.conv5(x)
+        x = self.conv6(x)
         return x
 
 
 class PoseFeatureBlock(nn.Module):
 
-    def __init__(self, nin, k):
+    def __init__(self, nin, k, kernel_size=9):
         super(PoseFeatureBlock, self).__init__()
-        self.conv1 = StdConv(nin + k, nin, 9, padding=4)
-        self.conv2 = StdConv(nin, nin, 9, padding=4)
-        self.conv3 = StdConv(nin, nin, 9, padding=4)
-        self.conv4 = nn.Conv2d(nin, k, 1, padding=0)
+        self.conv1 = StdConv(nin + k, nin, kernel_size=kernel_size, padding=kernel_size // 2)
+        self.conv2 = StdConv(nin, nin, kernel_size=kernel_size, padding=kernel_size // 2)
+        self.conv3 = nn.Conv2d(nin, k, 1, padding=0)
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.conv3(x)
-        x = self.conv4(x)
         return x
 
 
-class SimplePose(nn.Module):
-    def __init__(self, k, nout, layers=2):
-        super(SimplePose, self).__init__()
-        self.pose1 = PoseBlock(3, nout)
+class SimplePose(KeypointModel):
+
+    def __init__(self, keypoints, channels, nout, layers=2, pose_kernel=9, feature_kernel=9):
+        super(SimplePose, self).__init__(keypoints, channels)
+        self.pose_kernel = pose_kernel
+        self.feature_kernel = feature_kernel
+        self.pose1 = PoseBlock(channels, nout, self.pose_kernel)
         self.poses = nn.ModuleList()
         self.feats = nn.ModuleList()
         for i in range(1, layers):
-            self.feats.add_module("feat%d" % i, PoseFeatureBlock(nout, k))
-            self.poses.add_module("pose%d" % i, PoseBlock(3, nout))
+            self.feats.add_module("feat%d" % i, PoseFeatureBlock(nout, k, self.feature_kernel))
+            self.poses.add_module("pose%d" % i, PoseBlock(3, nout, self.pose_kernel))
 
-        self.feat1 = nn.Sequential(StdConv(nout, nout, 9, padding=4),
-                                   StdConv(nout, nout, 9, padding=4),
-                                   StdConv(nout, nout, 9, padding=4),
-                                   nn.Conv2d(nout, k, 1, padding=0))
+        self.feat1 = nn.Sequential(StdConv(nout, nout, self.feature_kernel, padding=self.feature_kernel // 2),
+                                   StdConv(nout, nout, self.feature_kernel, padding=self.feature_kernel // 2),
+                                   # StdConv(nout, nout, 9, padding=4),
+                                   nn.Conv2d(nout, keypoints, 1, padding=0))
 
     def forward(self, x):
         x1 = self.pose1(x)
@@ -103,7 +109,38 @@ class SimplePose(nn.Module):
             outs.append(out2)
         return outs
 
+    def predict(self, x):
+        output = self.forward(x)
+        return output[-1]
 
+
+class PoseUNet(KeypointModel):
+
+    def __init__(self, keypoints, channels, n_down=4, n_up=3):
+        super(PoseUNet, self).__init__(keypoints, channels)
+        self.inc = inconv(channels, 64)
+        self.down1 = down(64, 128)
+        self.down2 = down(128, 256)
+        self.down3 = down(256, 512)
+        self.down4 = down(512, 512)
+        self.up1 = up(1024, 256)
+        self.up2 = up(512, 128)
+        self.up3 = up(256, 64)
+        self.up4 = up(128, 64)
+        self.outc = outconv(64, keypoints)
+
+    def forward(self, x):
+        x1 = self.inc(x)
+        x2 = self.down1(x1)
+        x3 = self.down2(x2)
+        x4 = self.down3(x3)
+        x5 = self.down4(x4)
+        x = self.up1(x5, x4)
+        x = self.up2(x, x3)
+        x = self.up3(x, x2)
+#         x = self.up4(x, x1)
+        x = self.outc(x)
+        return x
 
 
 class double_conv(nn.Module):
@@ -148,6 +185,7 @@ class down(nn.Module):
 
 
 class up(nn.Module):
+
     def __init__(self, in_ch, out_ch, bilinear=False):
         super(up, self).__init__()
 
@@ -170,6 +208,7 @@ class up(nn.Module):
 
 
 class outconv(nn.Module):
+
     def __init__(self, in_ch, out_ch):
         super(outconv, self).__init__()
         self.conv = nn.Conv2d(in_ch, out_ch, 1)
