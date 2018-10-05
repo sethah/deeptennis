@@ -37,3 +37,14 @@ make clips
 
 ![Not Action Examples](https://github.com/sethah/deeptennis/blob/master/docs/static/img/not_action_examples.png)
 
+### Train CNN to find tennis court corners
+
+#### Image augmentation
+
+#### Heatmap predictions
+
+![Action Examples](https://github.com/sethah/deeptennis/blob/master/docs/static/img/prediction_heatmap.png)
+
+#### Bounding boxes
+
+![Not Action Examples](https://github.com/sethah/deeptennis/blob/master/docs/static/img/prediction_bbox.png)

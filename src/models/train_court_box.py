@@ -145,11 +145,9 @@ if __name__ == "__main__":
     logging.debug(f"Validating on {len(valid_ds)} images")
 
     trainable_params = [p for p in model.parameters() if p.requires_grad]
-    # criterion = nn.BCEWithLogitsLoss(reduction='sum').to(train_device)
     criterion = nn.MSELoss(reduction='sum').to(train_device)
     optimizer = torch.optim.Adam(trainable_params, lr=args.initial_lr)
-    # lr_sched = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.lr_gamma)
-    lr_sched = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[3, 5, 7], gamma=0.4)
+    lr_sched = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2, 4, 6], gamma=0.4)
     logging.debug(f"Training {len(trainable_params)} parameters")
 
     best_loss = 1000000.
