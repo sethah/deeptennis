@@ -21,12 +21,8 @@ def valid(epoch, model, criterion, loader, device):
     model.eval()
     for inp, targ in loader:
         inp, targ = inp.to(device), targ.to(device)
-        outs = model.forward(inp)
-        if not isinstance(outs, list):
-            outs = [outs]
-        loss = 0.
-        for out in outs:
-            loss += criterion(out, targ)
+        out = model.predict(inp)
+        loss = criterion(out, targ)
         total_loss += loss.item()
         n += inp.shape[0]
     total_loss /= n
@@ -137,7 +133,7 @@ if __name__ == "__main__":
             transforms.ColorJitter(brightness=0.1, hue=0.1, contrast=0.5, saturation=0.5)),
         WrapTransform(transforms.ToTensor()),
         WrapTransform(transforms.Normalize(ds_mean, ds_std)),
-        BoxToGrid(grid_size=grid_size)])
+        BoxToHeatmap(grid_size=grid_size, gamma=0.05)])
 
     train_ds = train_ds.with_transforms(img_transforms)
     train_loader = torch.utils.data.DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,
@@ -149,9 +145,11 @@ if __name__ == "__main__":
     logging.debug(f"Validating on {len(valid_ds)} images")
 
     trainable_params = [p for p in model.parameters() if p.requires_grad]
-    criterion = nn.BCEWithLogitsLoss(reduction='sum').to(train_device)
+    # criterion = nn.BCEWithLogitsLoss(reduction='sum').to(train_device)
+    criterion = nn.MSELoss(reduction='sum').to(train_device)
     optimizer = torch.optim.Adam(trainable_params, lr=args.initial_lr)
-    lr_sched = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.lr_gamma)
+    # lr_sched = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.lr_gamma)
+    lr_sched = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[3, 5, 7], gamma=0.4)
     logging.debug(f"Training {len(trainable_params)} parameters")
 
     best_loss = 1000000.

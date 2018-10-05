@@ -560,7 +560,7 @@ class BoxToHeatmap(object):
         ind = np.array(list(itertools.product(range(im_size[0]), range(im_size[1]))))
         class_maps = []
         for coord in bbox_t:
-            c = coord.numpy()
+            c = coord
             if np.all(c >= 0) and np.all(c < np.array(im_size)):
                 hmap = BoxToHeatmap._place_gaussian(c[::-1], self.gamma, ind,
                                                     im_size[0], im_size[1])

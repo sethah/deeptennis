@@ -28,3 +28,12 @@ of the tennis court
 ```
 make clips
 ```
+
+#### Action
+
+![Action Examples](https://github.com/sethah/deeptennis/blob/master/docs/static/img/action_examples.png)
+
+#### Not action
+
+![Not Action Examples](https://github.com/sethah/deeptennis/blob/master/docs/static/img/not_action_examples.png)
+

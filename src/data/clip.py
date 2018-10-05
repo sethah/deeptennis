@@ -29,6 +29,9 @@ class Video(object):
     def __getitem__(self, item):
         return self.frames[int(item)]
 
+    def __repr__(self):
+        return self.name
+
 class Frame(object):
 
     def __init__(self, uri):

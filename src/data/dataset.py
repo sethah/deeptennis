@@ -8,10 +8,11 @@ import logging
 from sklearn.metrics.pairwise import rbf_kernel
 
 import torch
-import torchvision.transforms as transforms
+import torchvision.transforms as tvt
 
 from src.data.clip import Clip, Video
 import src.utils as utils
+import src.vision.transforms as transforms
 
 
 class ImageFilesDataset(torch.utils.data.Dataset):
@@ -42,16 +43,20 @@ class ImageFilesDataset(torch.utils.data.Dataset):
         return ImageFilesDataset(self.files, self.labels, transform=tfms)
 
     def statistics(self):
+        std_transforms = tvt.Compose([tvt.ToTensor()])
+        _ds = self.with_transforms(std_transforms)
+        return ImageFilesDataset._compute_mean_std(_ds)
+
+    @staticmethod
+    def _compute_mean_std(ds):
         """
         Compute the mean and standard deviation for each image channel.
         """
-        std_transforms = transforms.Compose([transforms.ToTensor()])
-        _ds = self.with_transforms(std_transforms)
         tsum = 0.
         tcount = 0.
         tsum2 = 0.
-        for i in range(len(_ds)):
-            im = _ds[i]
+        for i in range(len(ds)):
+            im, *_ = ds[i]
             im = im.view(im.shape[0], -1)
             tsum = tsum + im.sum(dim=1)
             tcount = tcount + im.shape[1]
@@ -79,6 +84,11 @@ class ImageFilesDatasetBox(ImageFilesDataset):
 
     def with_transforms(self, tfms):
         return ImageFilesDatasetBox(self.files, self.labels, transform=tfms)
+
+    def statistics(self):
+        std_transforms = transforms.Compose([transforms.WrapTransform(tvt.ToTensor())])
+        _ds = self.with_transforms(std_transforms)
+        return ImageFilesDataset._compute_mean_std(_ds)
 
 
 class GridDataset(torch.utils.data.Dataset):
