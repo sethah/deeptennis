@@ -43,10 +43,13 @@ class ActionFrame(Frame):
         super().__init__(uri)
         self.bbox = bbox
 
-class BoundingBox(object):
+class BoundingPolygon(object):
 
     def __init__(self):
         pass
+
+class BoundingTrapezoid(object):
+
 
 class Clip(object):
     """

@@ -123,11 +123,11 @@ class PoseUNet(KeypointModel):
         self.down2 = down(128, 256)
         self.down3 = down(256, 512)
         self.down4 = down(512, 512)
-        self.up1 = up(1024, 256)
-        self.up2 = up(512, 128)
-        self.up3 = up(256, 64)
-        self.up4 = up(128, 64)
-        self.outc = outconv(64, keypoints)
+        self.up1 = Up(1024, 256)
+        self.up2 = Up(512, 128)
+        self.up3 = Up(256, 64)
+        self.up4 = Up(128, 64)
+        self.outc = OutConv(64, keypoints)
 
     def forward(self, x):
         x1 = self.inc(x)
@@ -184,10 +184,10 @@ class down(nn.Module):
         return x
 
 
-class up(nn.Module):
+class Up(nn.Module):
 
     def __init__(self, in_ch, out_ch, bilinear=False):
-        super(up, self).__init__()
+        super(Up, self).__init__()
 
         if bilinear:
             self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
@@ -197,7 +197,7 @@ class up(nn.Module):
         self.conv = double_conv(in_ch, out_ch)
 
     def forward(self, x1, x2):
-        x1 = self.up(x1)
+        x1 = self.Up(x1)
         diffX = x1.size()[2] - x2.size()[2]
         diffY = x1.size()[3] - x2.size()[3]
         x2 = F.pad(x2, (diffX // 2, int(diffX / 2),
@@ -207,10 +207,10 @@ class up(nn.Module):
         return x
 
 
-class outconv(nn.Module):
+class OutConv(nn.Module):
 
     def __init__(self, in_ch, out_ch):
-        super(outconv, self).__init__()
+        super(OutConv, self).__init__()
         self.conv = nn.Conv2d(in_ch, out_ch, 1)
 
     def forward(self, x):

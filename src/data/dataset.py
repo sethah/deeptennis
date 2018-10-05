@@ -162,7 +162,7 @@ def get_bounding_box_dataset(videos, clip_path, filter_valid=False, max_frames=N
                     cnt += 1
                     frames.append(frame)
                     bboxes.append(bbox.reshape(4, 2))
-                if max_frames and cnt > max_frames:
-                    break
+            if max_frames and cnt > max_frames:
+                break
         logging.debug(f"Filtered {invalid} invalid frames for {video.name}")
     return ImageFilesDatasetBox(frames, bboxes)
