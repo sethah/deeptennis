@@ -8,8 +8,8 @@ import torch.utils
 import torch.utils.data as data
 import torchvision.transforms as transforms
 
-from src.data.clip import Clip, Video
-from src.data.dataset import GridDataset, get_bounding_box_dataset
+from src.data.clip import Video
+from src.data.dataset import get_bounding_box_dataset
 from src.vision.transforms import *
 import src.models.models as models
 import src.utils as utils
@@ -95,8 +95,8 @@ if __name__ == "__main__":
     clip_path = Path(args.clip_path)
 
     np.random.shuffle(video_paths)
-    train_videos = [Video(v) for v in video_paths[args.n_valid:]]
-    valid_videos = [Video(v) for v in video_paths[:args.n_valid]]
+    train_videos = [Video.from_dir(v) for v in video_paths[args.n_valid:]]
+    valid_videos = [Video.from_dir(v) for v in video_paths[:args.n_valid]]
     logging.debug(f"Holding out match {[v.name for v in valid_videos]}")
 
     train_ds = get_bounding_box_dataset(train_videos, clip_path, filter_valid=True, max_frames=300)

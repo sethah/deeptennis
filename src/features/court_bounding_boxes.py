@@ -4,11 +4,11 @@ import argparse
 from pathlib import Path
 import logging
 from logging.config import fileConfig
-from collections import Counter
 import scipy.signal as sig
 import cv2
 from tqdm import tqdm
 import itertools
+import pickle
 
 import csv
 
@@ -61,7 +61,10 @@ def compute_slope(zoom, p0):
     slopes = []
     while j >= 0 and j < zoom.shape[0] and np.sum(zoom[j]) > 0:
         i = np.argmax(zoom[j])
-        slope = (j - p0[0]) / (i - p0[1])
+        if i - p0[1] == 0:
+            slope = np.inf
+        else:
+            slope = (j - p0[0]) / (i - p0[1])
         slopes.append(slope)
         j -= 1
     slopes = np.array(slopes)
@@ -214,51 +217,64 @@ if __name__ == "__main__":
 
     logging.debug(f"Begin bounding box detection for {match_name}")
     coords = []
+    areas = []
     invalids = 0
-    for frame in tqdm(all_clip_frames):
-        img = cv2.imread(str(frame))
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        court_outline = get_court_outline(img, 10, sensitivity=sensitivity)
-        im_h, im_w = court_outline.shape
-        cropped_outline = court_outline[crop_top:im_h - crop_bottom, crop_left:im_w - crop_right]
-        x1, x2, y1_bot, y2_bot, y_serve = get_baseline(cropped_outline, peak_distance=peak_distance)
-        x1 += crop_left
-        x2 += crop_left
-        y1_bot += crop_top
-        y2_bot += crop_top
-        y_serve += crop_top
-        top_left = get_top_corner(court_outline, x1, x2, y1_bot, y_serve)
-        top_right = get_top_corner(court_outline, x1, x2, y2_bot, y_serve, left=False)
-        p1 = x1, y1_bot
-        p2 = x2, y2_bot
-        p3 = top_right
-        p4 = top_left
-        if not utils.validate_court_box(p1, p2, p3, p4, im_w, im_h):
-            invalids += 1
-        proposals = propose_bounding_boxes(p1, p2, p3, p4)
-        coords.append(proposals)
+    for clip_frames in clips:
+        clip_coords = []
+        for frame in clip_frames:
+            img = cv2.imread(str(frame))
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            court_outline = get_court_outline(img, 10, sensitivity=sensitivity)
+            im_h, im_w = court_outline.shape
+            cropped_outline = court_outline[crop_top:im_h - crop_bottom, crop_left:im_w - crop_right]
+            x1, x2, y1_bot, y2_bot, y_serve = get_baseline(cropped_outline, peak_distance=peak_distance)
+            x1 += crop_left
+            x2 += crop_left
+            y1_bot += crop_top
+            y2_bot += crop_top
+            y_serve += crop_top
+            top_left = get_top_corner(court_outline, x1, x2, y1_bot, y_serve)
+            top_right = get_top_corner(court_outline, x1, x2, y2_bot, y_serve, left=False)
+            p1 = x1, y1_bot
+            p2 = x2, y2_bot
+            p3 = top_right
+            p4 = top_left
+            if not utils.validate_court_box(p1, p2, p3, p4, im_w, im_h):
+                invalids += 1
+            _proposals = propose_bounding_boxes(p1, p2, p3, p4)
+            areas += [get_area(c) for c in _proposals]
+            clip_coords.append(_proposals)
+        coords.append(clip_coords)
     logging.debug(f"{invalids}/{len(all_clip_frames)} were invalid")
-    coords = np.array(coords)
-    median_area = np.median([get_area(c) for c in coords.reshape(-1, 8)])
+    # median_area = np.median([get_area(c) for _coords in coords for c in _coords])
+    median_area = np.median(areas)
 
     best_boxes = []
-    for proposals in coords:
-        # ensure that it always chooses a valid proposal if it exists
-        filtered = [p for p in proposals if
-                    utils.validate_court_box(*np.array(p).reshape(4, 2), im_w, im_h)]
-        if len(filtered) == 0:
-            # no valid proposals
-            best_boxes.append(list(proposals[0]))
-        else:
-            best_idx = np.argmin([abs(get_area(c) - median_area) for c in filtered])
-            best_boxes.append(list(filtered[best_idx]))
+    for clip_proposals in coords:
+        clip_boxes = []
+        for proposals in clip_proposals:
+            # ensure that it always chooses a valid proposal if it exists
+            filtered = [p for p in proposals if
+                        utils.validate_court_box(*np.array(p).reshape(4, 2), im_w, im_h)]
+            if len(filtered) == 0:
+                # no valid proposals
+                clip_boxes.append(list(proposals[0]))
+            else:
+                best_idx = np.argmin([abs(get_area(c) - median_area) for c in filtered])
+                clip_boxes.append(list(filtered[best_idx]))
+        best_boxes.append(clip_boxes)
     logging.debug(f"End bounding box detection for {match_name}")
 
-    with open(save_path, 'w') as csvfile:
-        boxwriter = csv.writer(csvfile, delimiter=',', quotechar='|')
-        frame_idx = 0
-        for clip_idx, clip in enumerate(clips):
-            for frame in clip:
-                boxwriter.writerow([str(frame.stem), clip_idx] + best_boxes[frame_idx])
-                frame_idx += 1
+    clip_list = [list(zip([c.name for c in clip_frames], clip_boxes)) \
+                 for clip_frames, clip_boxes in zip(clips, best_boxes)]
+    with open(save_path, 'wb') as save_file:
+        pickle.dump({'path': str(frames_path.resolve()), 'data': clip_list}, save_file)
+
+    # with open(save_path, 'w') as csvfile:
+    #     boxwriter = csv.writer(csvfile, delimiter=',', quotechar='|')
+    #     frame_idx = 0
+    #     for clip_idx, clip in enumerate(clips):
+    #         for frame in clip:
+    #             boxwriter.writerow([str(frame.stem), clip_idx] + best_boxes[frame_idx])
+    #             frame_idx += 1
 

@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import shutil
 
-from src.data.clip import Clip, Video
+from src.data.clip import ActionVideo
 from src.vision.transforms import *
 import src.utils as utils
 
@@ -28,11 +28,10 @@ if __name__ == "__main__":
     clip_video_path.mkdir(parents=True)
     logging.debug(f"Processing {clip_video_path.stem}")
 
-    video = Video(frame_path)
-    clips = Clip.from_csv(clip_path, video)
+    clips = ActionVideo.load(clip_path)
     j = 0
     for clip_idx, clip in enumerate(clips):
-        for bbox, frame in zip(clip.bboxes, clip.frames):
+        for bbox, frame in clip:
             img = cv2.imread(str(frame))
             font = cv2.FONT_HERSHEY_SIMPLEX
             bottomLeftCornerOfText = (100, 100)

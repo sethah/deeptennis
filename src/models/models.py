@@ -118,7 +118,7 @@ class PoseUNet(KeypointModel):
 
     def __init__(self, keypoints, channels, n_down=4, n_up=3):
         super(PoseUNet, self).__init__(keypoints, channels)
-        self.inc = inconv(channels, 64)
+        self.inc = InConv(channels, 64)
         self.down1 = down(64, 128)
         self.down2 = down(128, 256)
         self.down3 = down(256, 512)
@@ -161,9 +161,9 @@ class double_conv(nn.Module):
         return x
 
 
-class inconv(nn.Module):
+class InConv(nn.Module):
     def __init__(self, in_ch, out_ch):
-        super(inconv, self).__init__()
+        super(InConv, self).__init__()
         self.conv = double_conv(in_ch, out_ch)
 
     def forward(self, x):
@@ -171,9 +171,9 @@ class inconv(nn.Module):
         return x
 
 
-class down(nn.Module):
+class Down(nn.Module):
     def __init__(self, in_ch, out_ch):
-        super(down, self).__init__()
+        super(Down, self).__init__()
         self.mpconv = nn.Sequential(
             nn.MaxPool2d(2),
             double_conv(in_ch, out_ch)

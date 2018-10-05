@@ -10,7 +10,7 @@ from sklearn.metrics.pairwise import rbf_kernel
 import torch
 import torchvision.transforms as tvt
 
-from src.data.clip import Clip, Video
+from src.data.clip import ActionVideo, Video
 import src.utils as utils
 import src.vision.transforms as transforms
 
@@ -148,13 +148,13 @@ def get_bounding_box_dataset(videos, clip_path, filter_valid=False, max_frames=N
     bboxes = []
     frames = []
     for video in videos:
-        clips = Clip.from_csv(clip_path / (video.name + ".csv"), video)
+        clips = ActionVideo.load(clip_path / (video.name + ".pkl"))
         invalid = 0
         cnt = 0
         for clip in clips:
             img = cv2.imread(str(clip.frames[0]))
             im_h, im_w, _ = img.shape
-            for frame, bbox in zip(clip.frames, clip.bboxes):
+            for frame, bbox in clip:
                 if filter_valid and not utils.validate_court_box(*bbox.reshape(4,2), im_w, im_h):
                     invalid += 1
                     continue

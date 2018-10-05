@@ -1,12 +1,15 @@
-import pandas as pd
+import numpy as np
+import pickle
 from pathlib import Path
+
 
 class Video(object):
 
-    def __init__(self, uri, ext='.jpg'):
-        self.uri = Path(uri)
+    def __init__(self, frames, ext='.jpg'):
+        self.frames = frames
+        self.uri = Path(frames[0].parent)
         self.ext = ext
-        self.frames = sorted([f for f in self.uri.iterdir() if f.suffix == self.ext])
+        # self.frames = sorted([f for f in self.uri.iterdir() if f.suffix == self.ext])
 
     def _parse_uri(self):
         p1, p2, loc, yr = self.uri.stem.split("_")
@@ -23,6 +26,11 @@ class Video(object):
         return _venue
 
     @property
+    def year(self):
+        _, _, _, _year = self._parse_uri()
+        return _year
+
+    @property
     def name(self):
         return self.uri.stem
 
@@ -32,56 +40,33 @@ class Video(object):
     def __repr__(self):
         return self.name
 
-class Frame(object):
+    def __len__(self):
+        return len(self.frames)
 
-    def __init__(self, uri):
-        self.uri = uri
-
-class ActionFrame(Frame):
-
-    def __init__(self, uri, bbox):
-        super().__init__(uri)
-        self.bbox = bbox
-
-class BoundingPolygon(object):
-
-    def __init__(self):
-        pass
-
-class BoundingTrapezoid(object):
+    @classmethod
+    def from_dir(cls, folder, ext='.jpg'):
+        frames = sorted([f for f in folder.iterdir() if f.suffix == ext])
+        return cls(frames, ext=ext)
 
 
-class Clip(object):
-    """
-    A contiguous of frames from a video.
-    """
+class ActionVideo(Video):
 
-    def __init__(self, video):
-        self.bboxes = []
-        self.video = video
-        self.frames = []
+    def __init__(self, frames, boxes, ext='.jpg'):
+        super(ActionVideo, self).__init__(frames, ext=ext)
+        self.boxes = boxes
 
-    def frame_range(self):
-        pass
-
-    def _add_frame(self, frame_id, bbox):
-        frame_uri = self.video[frame_id]
-        self.frames.append(frame_uri)
-        self.bboxes.append(bbox)
-        return self
+    def __getitem__(self, item):
+        item = int(item)
+        return self.frames[item], self.boxes[item]
 
     @staticmethod
-    def from_csv(csv_path, video):
-        clips_path = Path(csv_path)
-        df = pd.read_csv(clips_path, header=None,
-                         names=['frame_id', 'clip_id'] + ['bb%d' % i for i in range(8)])
-        clips = {}
-        for i, row in df.iterrows():
-            bbox = row.iloc[2:].values
-            clip_id = row['clip_id']
-            if clip_id not in clips:
-                # TODO: fix this path
-                clips[clip_id] = Clip(video)
-            clips[clip_id]._add_frame(row['frame_id'] - 1, bbox)
-        return [v for k, v in sorted(clips.items(), key=lambda k: k[0])]
+    def load(path):
+        with open(path, 'rb') as f:
+            clip_dict = pickle.load(f)
+        vids = []
+        for i, clip_data in enumerate(clip_dict['data']):
+            frames = [Path(clip_dict['path']) / fname for fname, _ in clip_data]
+            boxes = [np.array(box) for _, box in clip_data]
+            vids.append(ActionVideo(frames, boxes))
+        return vids
 

@@ -32,8 +32,8 @@ data: requirements
 	$(PYTHON_INTERPRETER) src/data/make_dataset.py
 
 ALL_VIDEOS=$(wildcard $(DATA_DIR)/raw/*.mp4)
-clips: $(addprefix $(DATA_DIR)/interim/clips/, $(addsuffix .csv, $(basename $(notdir $(ALL_VIDEOS)))))
-$(DATA_DIR)/interim/clips/%.csv: $(DATA_DIR)/interim/action_mask/%.npy
+clips: $(addprefix $(DATA_DIR)/interim/clips/, $(addsuffix .pkl, $(basename $(notdir $(ALL_VIDEOS)))))
+$(DATA_DIR)/interim/clips/%.pkl: $(DATA_DIR)/interim/action_mask/%.npy
 	python src/features/court_bounding_boxes.py \
 	--mask-path $< \
 	--save-path $@ \
