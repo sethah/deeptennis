@@ -10,7 +10,7 @@ from sklearn.metrics.pairwise import rbf_kernel
 import torch
 import torchvision.transforms as tvt
 
-from src.data.clip import ActionVideo, Video
+from src.data.clip import ActionVideo
 import src.utils as utils
 import src.vision.transforms as transforms
 
@@ -91,59 +91,6 @@ class ImageFilesDatasetBox(ImageFilesDataset):
         return ImageFilesDataset._compute_mean_std(_ds)
 
 
-class GridDataset(torch.utils.data.Dataset):
-    def __init__(self, bbox_ds, grid_size):
-        self.ds = bbox_ds
-        self.grid_size = grid_size
-
-    def __getitem__(self, idx):
-        data, target = self.ds[idx]
-        gsize = torch.IntTensor(self.grid_size).double().to(data.device)
-        im_size = torch.tensor(data.size()[1:]).double().to(data.device)
-        grid_coords = (target / (im_size / gsize)).long()
-        n_coords = 4
-        z = torch.zeros([n_coords] + gsize.long().tolist())
-        for i, coord in enumerate(grid_coords):
-            c = coord.numpy()
-            if np.all(c >= 0) and np.all(c < np.array(self.grid_size)):
-                z[i, c[1], c[0]] = 1.
-        return data, z
-
-    def __len__(self):
-        return len(self.ds)
-
-
-class HeatmapDataset(torch.utils.data.Dataset):
-
-    def __init__(self, bbox_ds, im_size, grid_size, gamma=0.01):
-        self.ds = bbox_ds
-        self.im_size = im_size
-        self.ind = np.array(list(itertools.product(range(self.im_size[0]), range(self.im_size[1]))))
-        self.grid_size = grid_size
-        self.gamma = gamma
-
-    def __getitem__(self, idx):
-        data, target = self.ds[idx]
-        class_maps = []
-        for i, coord in enumerate(target):
-            c = coord.numpy()
-            if np.all(c >= 0) and np.all(c < np.array(self.im_size)):
-                hmap = HeatmapDataset._place_gaussian(c[::-1], self.gamma, self.ind, self.im_size[0], self.im_size[1])
-                hmap[hmap > 1] = 1.
-                hmap[hmap < 0.0099] = 0.
-                class_maps.append(cv2.resize(hmap, self.grid_size))
-            else:
-                class_maps.append(np.zeros(self.grid_size))
-        return data, torch.tensor(class_maps, dtype=torch.float32)
-
-    def __len__(self):
-        return len(self.ds)
-
-    @staticmethod
-    def _place_gaussian(mean, gamma, ind, height, width):
-        return rbf_kernel(ind, np.array(mean).reshape(1, 2), gamma=gamma).reshape(height, width)
-
-
 def get_bounding_box_dataset(videos, clip_path, filter_valid=False, max_frames=None):
     bboxes = []
     frames = []
@@ -155,13 +102,14 @@ def get_bounding_box_dataset(videos, clip_path, filter_valid=False, max_frames=N
             img = cv2.imread(str(clip.frames[0]))
             im_h, im_w, _ = img.shape
             for frame, bbox in clip:
-                if filter_valid and not utils.validate_court_box(*bbox.reshape(4,2), im_w, im_h):
+                # TODO: bandaid code. Check for valid box elsewhere
+                if filter_valid and not utils.validate_court_box(*bbox.reshape(-1, 2)[:4], im_w, im_h):
                     invalid += 1
                     continue
                 else:
                     cnt += 1
                     frames.append(frame)
-                    bboxes.append(bbox.reshape(4, 2))
+                    bboxes.append(bbox.reshape(-1, 2))
             if max_frames and cnt > max_frames:
                 break
         logging.debug(f"Filtered {invalid} invalid frames for {video.name}")

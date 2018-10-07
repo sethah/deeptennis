@@ -63,7 +63,7 @@ class RandomRotation(object):
         angle = self.get_params(self.degrees)
         cols, rows = img.size
         M = cv2.getRotationMatrix2D((cols // 2, rows // 2), angle, 1)
-        bbox = np.dot(M, np.concatenate([bbox.T, np.ones((1, 4))])).astype(int).T
+        bbox = np.dot(M, np.concatenate([bbox.T, np.ones((1, bbox.shape[0]))])).astype(int).T
         img = Fv.rotate(img, angle, self.resample, self.expand, self.center)
         cols2, rows2 = img.size
         bbox = bbox + np.array([(cols2 - cols) // 2, (rows2 - rows) // 2])
@@ -492,13 +492,7 @@ class JitterBox(object):
         self.std = std
 
     def __call__(self, img, bbox):
-        """
-        Args:
-            img (PIL Image): Image to be flipped.
-        Returns:
-            PIL Image: Randomly flipped image.
-        """
-        jitter = np.random.normal(self.mean, self.std, 8).reshape(4, 2)
+        jitter = np.random.normal(self.mean, self.std, bbox.reshape(-1).shape[0]).reshape(bbox.shape[0], 2)
         return img, bbox + jitter
 
     def __repr__(self):
@@ -524,7 +518,8 @@ class RandomHorizontalFlip(object):
         rows, cols = img.size
         if random.random() < self.p:
             bbox[:, 0] = rows - bbox[:, 0]
-            return Fv.hflip(img), bbox[np.array([1, 0, 3, 2])]
+            # TODO this doesn't generalize
+            return Fv.hflip(img), bbox[np.array([1, 0, 3, 2, 5, 4, 7, 6])]
         return img, bbox
 
     def __repr__(self):
@@ -540,6 +535,7 @@ class BoxToGrid(object):
         gsize = torch.IntTensor(self.grid_size).double()
         im_size = torch.tensor(img_t.size()[1:]).double()
         grid_coords = (bbox_t / (im_size / gsize)).long()
+        # TODO
         n_coords = 4
         grid = torch.zeros([n_coords] + gsize.long().tolist())
         for i, coord in enumerate(grid_coords):
@@ -574,3 +570,12 @@ class BoxToHeatmap(object):
     @staticmethod
     def _place_gaussian(mean, gamma, ind, height, width):
         return rbf_kernel(ind, np.array(mean).reshape(1, 2), gamma=gamma).reshape(height, width)
+
+
+class TorchImageToNumpy(object):
+
+    def __init__(self):
+        pass
+
+    def __call__(self, img_t):
+        return img_t.cpu().numpy().transpose(1, 2, 0)

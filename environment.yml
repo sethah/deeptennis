@@ -18,7 +18,6 @@ dependencies:
 - scikit-learn
 - jupyter
 - nb_conda
-- pymc3
 - scikit-image
 - pip:
   - git+https://github.com/hmmlearn/hmmlearn.git

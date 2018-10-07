@@ -59,13 +59,8 @@ def get_match_metadata(path):
     df = pd.read_csv(path)
     d = {}
     for i, row in df.iterrows():
-        name = "_".join([str(x) for x in [row['player1'], row['player2'], row['venue'], row['year']]])
-        d[name] = {'sensitivity': row['sensitivity'],
-                   'peak_distance': row['peak_distance'],
-                   'crop_left': row['crop_left'],
-                   'crop_right': row['crop_right'],
-                   'crop_top': row['crop_top'],
-                    'crop_bottom': row['crop_bottom']}
+        name = row['match_name']
+        d[name] = {k: v for k, v in row.items() if k != 'match_name'}
     return d
 
 

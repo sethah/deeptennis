@@ -119,10 +119,10 @@ class PoseUNet(KeypointModel):
     def __init__(self, keypoints, channels, n_down=4, n_up=3):
         super(PoseUNet, self).__init__(keypoints, channels)
         self.inc = InConv(channels, 64)
-        self.down1 = down(64, 128)
-        self.down2 = down(128, 256)
-        self.down3 = down(256, 512)
-        self.down4 = down(512, 512)
+        self.down1 = Down(64, 128)
+        self.down2 = Down(128, 256)
+        self.down3 = Down(256, 512)
+        self.down4 = Down(512, 512)
         self.up1 = Up(1024, 256)
         self.up2 = Up(512, 128)
         self.up3 = Up(256, 64)
@@ -197,7 +197,7 @@ class Up(nn.Module):
         self.conv = double_conv(in_ch, out_ch)
 
     def forward(self, x1, x2):
-        x1 = self.Up(x1)
+        x1 = self.up(x1)
         diffX = x1.size()[2] - x2.size()[2]
         diffY = x1.size()[3] - x2.size()[3]
         x2 = F.pad(x2, (diffX // 2, int(diffX / 2),

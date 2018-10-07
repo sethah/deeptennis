@@ -41,7 +41,7 @@ $(DATA_DIR)/interim/clips/%.pkl: $(DATA_DIR)/interim/action_mask/%.npy
 	--meta-file $(PROJECT_DIR)/src/match_meta.txt
 
 clip_videos: $(addprefix $(DATA_DIR)/interim/match_clips_video/, $(notdir $(ALL_VIDEOS)))
-$(DATA_DIR)/interim/match_clips_video/%.mp4: $(DATA_DIR)/interim/clips/%.csv
+$(DATA_DIR)/interim/match_clips_video/%.mp4: $(DATA_DIR)/interim/clips/%.pkl
 	python src/data/clips2vid.py \
 	--clip-path $< \
 	--save-path $@ \

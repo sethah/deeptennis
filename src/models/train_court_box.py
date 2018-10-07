@@ -59,7 +59,6 @@ def train(epoch, model, loader, optimizer, criterion, device=torch.device("cpu")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--imgs-path", type=str)
     parser.add_argument("--model-save-path", type=str, default=None)
     parser.add_argument("--load-path", type=str, default=None)
     parser.add_argument("--gpu", type=bool, default=False)

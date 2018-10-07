@@ -9,7 +9,6 @@ class Video(object):
         self.frames = frames
         self.uri = Path(frames[0].parent)
         self.ext = ext
-        # self.frames = sorted([f for f in self.uri.iterdir() if f.suffix == self.ext])
 
     def _parse_uri(self):
         p1, p2, loc, yr = self.uri.stem.split("_")
@@ -45,6 +44,7 @@ class Video(object):
 
     @classmethod
     def from_dir(cls, folder, ext='.jpg'):
+        folder = Path(folder)
         frames = sorted([f for f in folder.iterdir() if f.suffix == ext])
         return cls(frames, ext=ext)
 
@@ -64,9 +64,10 @@ class ActionVideo(Video):
         with open(path, 'rb') as f:
             clip_dict = pickle.load(f)
         vids = []
-        for i, clip_data in enumerate(clip_dict['data']):
-            frames = [Path(clip_dict['path']) / fname for fname, _ in clip_data]
-            boxes = [np.array(box) for _, box in clip_data]
-            vids.append(ActionVideo(frames, boxes))
+        for i, (clip_file_names, clip_keypoints) in enumerate(zip(clip_dict['names'],
+                                                              clip_dict['keypoints'])):
+            frames = [Path(clip_dict['path']) / fname for fname in clip_file_names]
+            keypoints = [np.array(kp) for kp in clip_keypoints]
+            vids.append(ActionVideo(frames, keypoints))
         return vids
 

@@ -173,6 +173,21 @@ def propose_bounding_boxes(p1, p2, p3, p4):
     return proposals
 
 
+def get_score_width(img, x, y, w, h, sobel_thresh=0.5, min_width=0):
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)[y:y + h, x:x + w]
+    sobelx = cv2.Sobel(gray,cv2.CV_64F,1,0,ksize=5)
+    z = np.sum(np.abs(sobelx), axis=0)
+    peaks = sig.find_peaks(z, prominence=100)[0]
+    pks = []
+    for pk in peaks:
+        if np.sum(np.abs(sobelx[:, pk]) > 10) > sobel_thresh * h:
+            pks.append(pk)
+    if len(pks) < 2:
+        return 0
+    else:
+        return max(min_width, pks[-1])
+
+
 def get_area(crd):
     a = abs(crd[4] - crd[6])
     b = abs(crd[0] - crd[2])
@@ -190,7 +205,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     fileConfig('logging_config.ini')
 
-    match_meta = utils.get_match_metadata(Path(args.meta_file))
+    match_metas = utils.get_match_metadata(Path(args.meta_file))
 
     mask_path = Path(args.mask_path)
     frames_path = Path(args.frames_path)
@@ -207,32 +222,39 @@ if __name__ == "__main__":
         clips.append(frame_list[start_idx:end_idx])
     all_clip_frames = [frame for clip in clips for frame in clip]
 
-    sensitivity = match_meta[match_name]['sensitivity']
-    sensitivity = np.array([sensitivity, sensitivity, sensitivity])
-    peak_distance = match_meta[match_name]['peak_distance']
-    crop_top = match_meta[match_name]['crop_top']
-    crop_left = match_meta[match_name]['crop_left']
-    crop_right = match_meta[match_name]['crop_right']
-    crop_bottom = match_meta[match_name]['crop_bottom']
+    match_meta = match_metas[match_name]
 
     logging.debug(f"Begin bounding box detection for {match_name}")
     coords = []
     areas = []
+    score_coords = []
     invalids = 0
     for clip_frames in clips:
         clip_coords = []
+        clip_score_coords = []
         for frame in clip_frames:
             img = cv2.imread(str(frame))
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            (score_x, score_y, score_w, score_h) = match_meta['score_x'], match_meta['score_y'], \
+            match_meta['score_w'], match_meta['score_h']
+            score_width = get_score_width(img, score_x, score_y, score_w, score_h,
+                                             sobel_thresh=match_meta['sobel_thresh'],
+                                             min_width=match_meta['minw'])
+            clip_score_coords.append([score_x, score_y + score_h, score_x + score_width,
+                                      score_y + score_h, score_x + score_width,
+                                      score_y, score_x, score_y])
+            sensitivity = np.ones(3) * match_meta['sensitivity']
             court_outline = get_court_outline(img, 10, sensitivity=sensitivity)
             im_h, im_w = court_outline.shape
-            cropped_outline = court_outline[crop_top:im_h - crop_bottom, crop_left:im_w - crop_right]
-            x1, x2, y1_bot, y2_bot, y_serve = get_baseline(cropped_outline, peak_distance=peak_distance)
-            x1 += crop_left
-            x2 += crop_left
-            y1_bot += crop_top
-            y2_bot += crop_top
-            y_serve += crop_top
+            cropped_outline = court_outline[match_meta['crop_top']:im_h - match_meta['crop_bottom'],
+                              match_meta['crop_left']:im_w - match_meta['crop_right']]
+            x1, x2, y1_bot, y2_bot, y_serve = get_baseline(cropped_outline,
+                                                           peak_distance=match_meta['peak_distance'])
+            x1 += match_meta['crop_left']
+            x2 += match_meta['crop_left']
+            y1_bot += match_meta['crop_top']
+            y2_bot += match_meta['crop_top']
+            y_serve += match_meta['crop_top']
             top_left = get_top_corner(court_outline, x1, x2, y1_bot, y_serve)
             top_right = get_top_corner(court_outline, x1, x2, y2_bot, y_serve, left=False)
             p1 = x1, y1_bot
@@ -245,8 +267,8 @@ if __name__ == "__main__":
             areas += [get_area(c) for c in _proposals]
             clip_coords.append(_proposals)
         coords.append(clip_coords)
+        score_coords.append(clip_score_coords)
     logging.debug(f"{invalids}/{len(all_clip_frames)} were invalid")
-    # median_area = np.median([get_area(c) for _coords in coords for c in _coords])
     median_area = np.median(areas)
 
     best_boxes = []
@@ -265,16 +287,13 @@ if __name__ == "__main__":
         best_boxes.append(clip_boxes)
     logging.debug(f"End bounding box detection for {match_name}")
 
-    clip_list = [list(zip([c.name for c in clip_frames], clip_boxes)) \
-                 for clip_frames, clip_boxes in zip(clips, best_boxes)]
-    with open(save_path, 'wb') as save_file:
-        pickle.dump({'path': str(frames_path.resolve()), 'data': clip_list}, save_file)
+    clip_file_names = [[c.name for c in clip_frames] for clip_frames in clips]
+    clip_keypoints = []
+    for clip_court_boxes, clip_score_boxes in zip(best_boxes, score_coords):
+        clip_keypoints.append([court_box + score_box for court_box, score_box in
+                          zip(clip_court_boxes, clip_score_boxes)])
 
-    # with open(save_path, 'w') as csvfile:
-    #     boxwriter = csv.writer(csvfile, delimiter=',', quotechar='|')
-    #     frame_idx = 0
-    #     for clip_idx, clip in enumerate(clips):
-    #         for frame in clip:
-    #             boxwriter.writerow([str(frame.stem), clip_idx] + best_boxes[frame_idx])
-    #             frame_idx += 1
+    with open(save_path, 'wb') as save_file:
+        pickle.dump({'path': str(frames_path.resolve()), 'names': clip_file_names,
+                     'keypoints': clip_keypoints}, save_file)
 
