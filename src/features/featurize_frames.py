@@ -1,9 +1,8 @@
 import numpy as np
 import sys
 import argparse
-from tqdm import tqdm
 from pathlib import Path
-import logging
+from tqdm import tqdm
 from logging.config import fileConfig
 
 import torch.nn as nn
@@ -13,8 +12,7 @@ import torchvision.models as models
 
 from sklearn.decomposition import PCA
 
-from src.data.dataset import ImageDataset
-
+from src.data.dataset import ImageFilesDataset
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -54,7 +52,7 @@ if __name__ == "__main__":
     if args.gpu:
         model = model.to("cuda:0")
 
-    ds = ImageDataset(list(sorted(img_path.iterdir())), transform=img_transforms)
+    ds = ImageFilesDataset(list(sorted(img_path.iterdir())), transform=img_transforms)
     data_loader = torch.utils.data.DataLoader(ds,
                                               batch_size=args.batch_size,
                                               shuffle=False,

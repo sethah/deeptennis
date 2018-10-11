@@ -78,6 +78,15 @@ class RandomRotation(object):
         format_string += ')'
         return format_string
 
+def rotate(inp, rows, cols, angle, resample, expand, center, poly=False):
+    if poly:
+        M = cv2.getRotationMatrix2D((cols // 2, rows // 2), angle, 1)
+        inp = np.dot(M, np.concatenate([inp.T, np.ones((1, inp.shape[0]))])).astype(int).T
+        cols2, rows2 = inp.size
+        inp += bbox + np.array([(cols2 - cols) // 2, (rows2 - rows) // 2])
+
+
+
 
 class Compose(object):
     """Composes several transforms together.
@@ -571,6 +580,19 @@ class BoxToHeatmap(object):
     def _place_gaussian(mean, gamma, ind, height, width):
         return rbf_kernel(ind, np.array(mean).reshape(1, 2), gamma=gamma).reshape(height, width)
 
+def place_gaussian(keypoints, gamma, height, width, grid_size):
+    ind = np.array(list(itertools.product(range(height), range(width))))
+    class_maps = []
+    for coord in keypoints:
+        if np.all(coord >= 0) and np.all(coord < np.array([height, width])):
+            hmap = rbf_kernel(ind, np.array(coord[::-1]).reshape(1, 2),
+                              gamma=gamma).reshape(height, width)
+            hmap[hmap > 1] = 1.
+            hmap[hmap < 0.0099] = 0.
+            class_maps.append(cv2.resize(hmap, grid_size))
+        else:
+            class_maps.append(np.zeros(grid_size))
+    return np.array(class_maps, dtype=np.float32)
 
 class TorchImageToNumpy(object):
 

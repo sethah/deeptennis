@@ -68,7 +68,7 @@ $(DATA_DIR)/interim/featurized_frames/%.npy : $(DATA_DIR)/processed/frames/%
 frames: VFRAMES = 2000
 frames: FPS = 1
 frames: $(addprefix $(DATA_DIR)/processed/frames/, $(basename $(notdir $(ALL_VIDEOS))))
-
+.PRECIOUS: $(DATA_DIR)/processed/frames/%
 $(DATA_DIR)/processed/frames/%: $(DATA_DIR)/raw/%.mp4
 	python src/data/vid2img.py \
 	--vid-path $< \

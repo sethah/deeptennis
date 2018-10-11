@@ -17,7 +17,7 @@ from src import utils
 
 def get_court_outline(im, threshold=10, sensitivity=[200, 200, 200]):
     lower_white = np.array(sensitivity, dtype=np.uint8)
-    upper_white = np.array([255,255,255], dtype=np.uint8)
+    upper_white = np.array([255, 255, 255], dtype=np.uint8)
 
     # Threshold the HSV image to get only white colors
     mask = cv2.inRange(im, lower_white, upper_white)
@@ -174,8 +174,10 @@ def propose_bounding_boxes(p1, p2, p3, p4):
 
 
 def get_score_width(img, x, y, w, h, sobel_thresh=0.5, min_width=0):
+    if h == 0 or w == 0:
+        return 0
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)[y:y + h, x:x + w]
-    sobelx = cv2.Sobel(gray,cv2.CV_64F,1,0,ksize=5)
+    sobelx = cv2.Sobel(gray,cv2.CV_64F, 1, 0, ksize=5)
     z = np.sum(np.abs(sobelx), axis=0)
     peaks = sig.find_peaks(z, prominence=100)[0]
     pks = []
@@ -237,7 +239,8 @@ if __name__ == "__main__":
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             (score_x, score_y, score_w, score_h) = match_meta['score_x'], match_meta['score_y'], \
             match_meta['score_w'], match_meta['score_h']
-            score_width = get_score_width(img, score_x, score_y, score_w, score_h,
+            score_width = get_score_width((img / 255.).astype(np.float32),
+                                          score_x, score_y, score_w, score_h,
                                              sobel_thresh=match_meta['sobel_thresh'],
                                              min_width=match_meta['minw'])
             clip_score_coords.append([score_x, score_y + score_h, score_x + score_width,

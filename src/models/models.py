@@ -116,18 +116,18 @@ class SimplePose(KeypointModel):
 
 class PoseUNet(KeypointModel):
 
-    def __init__(self, keypoints, channels, n_down=4, n_up=3):
+    def __init__(self, keypoints, channels, filters, n_down=4, n_up=3):
         super(PoseUNet, self).__init__(keypoints, channels)
-        self.inc = InConv(channels, 64)
-        self.down1 = Down(64, 128)
-        self.down2 = Down(128, 256)
-        self.down3 = Down(256, 512)
-        self.down4 = Down(512, 512)
-        self.up1 = Up(1024, 256)
-        self.up2 = Up(512, 128)
-        self.up3 = Up(256, 64)
-        self.up4 = Up(128, 64)
-        self.outc = OutConv(64, keypoints)
+        self.inc = InConv(channels, filters)
+        self.down1 = Down(filters, filters * 2)
+        self.down2 = Down(filters * 2, filters * 4)
+        self.down3 = Down(filters * 4, filters * 8)
+        self.down4 = Down(filters * 8, filters * 8)
+        self.up1 = Up(filters * 16, filters * 4)
+        self.up2 = Up(filters * 8, filters * 2)
+        self.up3 = Up(filters * 4, filters)
+        self.up4 = Up(filters * 2, filters)
+        self.outc = OutConv(filters, keypoints)
 
     def forward(self, x):
         x1 = self.inc(x)
@@ -138,7 +138,7 @@ class PoseUNet(KeypointModel):
         x = self.up1(x5, x4)
         x = self.up2(x, x3)
         x = self.up3(x, x2)
-#         x = self.up4(x, x1)
+        x = self.up4(x, x1)
         x = self.outc(x)
         return x
 
