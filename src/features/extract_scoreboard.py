@@ -42,7 +42,6 @@ def find_text(dilated, min_w=5, min_h=5):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mask-path", type=str)
     parser.add_argument("--frames-path", type=str)
     parser.add_argument("--save-path", type=str, default=None)
     parser.add_argument("--meta-file", type=str, default=None)
@@ -54,14 +53,15 @@ if __name__ == "__main__":
     with open(args.meta_file, 'r') as f:
         match_metas = json.load(f)
 
-    # mask_path = Path(args.mask_path)
     frames_path = Path(args.frames_path)
     save_path = Path(args.save_path)
     if not save_path.parent.exists():
         save_path.parent.mkdir()
 
     match_name = frames_path.stem
-    match_meta = match_metas[match_name]
+    match_meta = match_metas.get(match_name, None)
+    if match_meta is None:
+        sys.exit(0)
     frame_list = np.array(list(sorted(frames_path.iterdir())))
 
     x, y, w, h = match_meta['box']

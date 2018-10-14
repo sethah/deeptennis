@@ -10,14 +10,12 @@ if __name__ == "__main__":
     parser.add_argument("--fps", type=float, default=25)
     parser.add_argument("--vid-path", type=str)
     parser.add_argument("--img-path", type=str)
-    parser.add_argument("--overwrite", action='store_true')
     parser.add_argument("--vframes", type=int, default=1000)
-    parser.set_defaults(overwrite=False)
     args = parser.parse_args()
 
     vid_path = Path(args.vid_path)
     img_path = Path(args.img_path)
-    if img_path.exists() and args.overwrite:
+    if img_path.exists():
         shutil.rmtree(img_path)
 
     if not img_path.exists():

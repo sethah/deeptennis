@@ -535,23 +535,61 @@ class RandomHorizontalFlip(object):
         return self.__class__.__name__ + '(p={})'.format(self.p)
 
 
-class BoxToGrid(object):
+class CoordsToGrid(object):
 
-    def __init__(self, grid_size):
+    def __init__(self, grid_size, im_size):
         self.grid_size = grid_size
+        self.im_size = im_size
 
-    def __call__(self, img_t, bbox_t):
+    def __call__(self, coords):
         gsize = torch.IntTensor(self.grid_size).double()
-        im_size = torch.tensor(img_t.size()[1:]).double()
-        grid_coords = (bbox_t / (im_size / gsize)).long()
-        # TODO
-        n_coords = 4
+        im_size = torch.tensor(self.im_size).double()
+        grid_coords = (coords / (im_size / gsize)).long()
+        n_coords = coords.shape[0]
         grid = torch.zeros([n_coords] + gsize.long().tolist())
         for i, coord in enumerate(grid_coords):
             c = coord.numpy()
             if np.all(c >= 0) and np.all(c < np.array(self.grid_size)):
                 grid[i, c[1], c[0]] = 1.
-        return img_t, grid
+        return grid
+
+
+class BoxToCoords(object):
+
+    def __call__(self, box):
+        if len(box) == 4:
+            x, y, w, h = box
+            return np.array([x, y + h, x + w, y + h, x + w, y, x, y], dtype=np.float32).reshape(4, 2)
+        elif len(box) == 5:
+            x, y, w, h, theta = box
+            theta = theta * np.pi / 180.
+            phi = np.arctan(h / w)
+            d = w / 2 / np.cos(phi)
+            x4 = x - d * np.cos(theta - phi)
+            y4 = y + d * np.sin(theta - phi)
+            x1 = x - d * np.cos(theta + phi)
+            y1 = y + d * np.sin(theta + phi)
+            x3 = x + d * np.cos(theta + phi)
+            y3 = y - d * np.sin(theta + phi)
+            x2 = x + d * np.cos(theta - phi)
+            y2 = y - d * np.sin(theta - phi)
+            return np.array([x1, y1, x2, y2, x3, y3, x4, y4], dtype=np.float32).reshape(4, 2)
+        else:
+            raise ValueError(f"Box length must be 4 or 5 but was {len(box)}")
+
+
+class CoordsToBox(object):
+
+    def __call__(self, coords):
+        x1, y1, x2, y2, x3, y3, x4, y4 = coords.ravel()
+        theta = np.arctan((y1 - y2) / (x2 - x1))
+        w = np.sqrt((x1 - x2)**2 + (y1 - y2)**2)
+        h = np.sqrt((x1 - x4)**2 + (y1 - y4)**2)
+        phi = np.arctan(h / w)
+        d = w / 2 / np.cos(phi)
+        cx = x4 + d * np.cos(theta - phi)
+        cy = y4 - d * np.sin(theta - phi)
+        return np.array([cx, cy, w, h, theta * 180 / np.pi], dtype=np.float32)
 
 
 class BoxToHeatmap(object):
@@ -580,6 +618,7 @@ class BoxToHeatmap(object):
     def _place_gaussian(mean, gamma, ind, height, width):
         return rbf_kernel(ind, np.array(mean).reshape(1, 2), gamma=gamma).reshape(height, width)
 
+
 def place_gaussian(keypoints, gamma, height, width, grid_size):
     ind = np.array(list(itertools.product(range(height), range(width))))
     class_maps = []
@@ -593,6 +632,7 @@ def place_gaussian(keypoints, gamma, height, width, grid_size):
         else:
             class_maps.append(np.zeros(grid_size))
     return np.array(class_maps, dtype=np.float32)
+
 
 class TorchImageToNumpy(object):
 

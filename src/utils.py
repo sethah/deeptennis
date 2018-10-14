@@ -103,7 +103,7 @@ def get_court_area(p1, p2, p3, p4):
     return 0.5 * (a + b) * h
 
 
-def validate_court_box(p1, p2, p3, p4, im_w, im_h, bot_width_tol=(0.4, 0.9),
+def validate_court_box(p1, p2, p3, p4, im_w, im_h, bot_width_tol=(0.4, 0.99),
                        top_width_tol=(0.1, 0.8), height_tol=(0.1,0.8), area_tol=(0.2,0.7)):
 
     valid = True
@@ -113,8 +113,8 @@ def validate_court_box(p1, p2, p3, p4, im_w, im_h, bot_width_tol=(0.4, 0.9),
     valid &= top_width < bot_width and top_width > top_width_tol[0] * im_w and top_width < top_width_tol[1] * im_w
 
     # baselines are mostly horizontal
-    valid &= abs(p1[1] - p2[1]) < im_h * 0.02
-    valid &= abs(p3[1] - p4[1]) < im_h * 0.02
+    valid &= abs(p1[1] - p2[1]) < im_h * 0.05
+    valid &= abs(p3[1] - p4[1]) < im_h * 0.05
 
     valid &= p3[0] > p4[0]
     valid &= p2[0] > p1[0]

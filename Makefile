@@ -40,6 +40,21 @@ $(DATA_DIR)/interim/clips/%.pkl: $(DATA_DIR)/interim/action_mask/%.npy
 	--frames-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \
 	--meta-file $(PROJECT_DIR)/src/match_meta.txt
 
+score_extract: $(addprefix $(DATA_DIR)/interim/scoreboard/, $(addsuffix .pkl, $(basename $(notdir $(ALL_VIDEOS)))))
+$(DATA_DIR)/interim/scoreboard/%.pkl: $(DATA_DIR)/processed/frames/%
+	python src/features/extract_scoreboard.py \
+	--save-path $@ \
+	--frames-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \
+	--meta-file $(PROJECT_DIR)/src/match_meta.json
+
+court_extract: $(addprefix $(DATA_DIR)/interim/court/, $(addsuffix .pkl, $(basename $(notdir $(ALL_VIDEOS)))))
+$(DATA_DIR)/interim/court/%.pkl: $(DATA_DIR)/interim/action_mask/%.npy
+	python src/features/extract_court_keypoints.py \
+	--mask-path $< \
+	--save-path $@ \
+	--frames-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \
+	--meta-file $(PROJECT_DIR)/src/match_meta.json
+
 clip_videos: $(addprefix $(DATA_DIR)/interim/match_clips_video/, $(notdir $(ALL_VIDEOS)))
 $(DATA_DIR)/interim/match_clips_video/%.mp4: $(DATA_DIR)/interim/clips/%.pkl
 	python src/data/clips2vid.py \

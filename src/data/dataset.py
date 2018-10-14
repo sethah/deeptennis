@@ -107,12 +107,17 @@ class ImageFilesDatasetBox(ImageFilesDataset):
 
 
 class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
-    def __init__(self, files, corners, scoreboard):
+
+    def __init__(self, files, corners, scoreboard, mean=None, std=None,
+                 size=(224, 224), corners_grid_size=(56, 56)):
         self.files = files
         self.corners = corners
         self.scoreboard = scoreboard
-        self.mean, self.std = self.statistics()
+        self.mean = mean
+        self.std = std
         self._train = True
+        self.size = size
+        self.corners_grid_size = corners_grid_size
 
     def __getitem__(self, idx):
         # TODO: store labels as torch tensors
@@ -134,8 +139,14 @@ class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
         self._train = True
 
     def transform(self, image, corners, scoreboard):
+        if self.mean is None:
+            self.compute_statistics()
         corners, scoreboard = corners.copy(), scoreboard.copy()
         cols0, rows0 = image.size
+
+        # randomly add some pixels to the width
+        scoreboard[2] += int(random.random() * 5 + 2)
+        scoreboard = transforms.BoxToCoords()(scoreboard)
 
         rows, cols = rows0, cols0
         if self._train:
@@ -144,6 +155,7 @@ class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
                 corners[:, 0] = cols - corners[:, 0]
                 scoreboard[:, 0] = cols - scoreboard[:, 0]
                 corners = corners[np.array([1, 0, 3, 2])]
+                scoreboard = scoreboard[np.array([1, 0, 3, 2])]
 
         if self._train:
             resample, expand, center = False, True, None
@@ -157,7 +169,7 @@ class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
             scoreboard = scoreboard + np.array([(cols - cols0) // 2, (rows - rows0) // 2])
 
         cols_in, rows_in = cols, rows
-        final_size = (256, 256)
+        final_size = self.size
         image = tvf.resize(image, final_size, Image.BILINEAR)
         cols, rows = image.size
         corners = corners * np.array([cols / cols_in, rows / rows_in])
@@ -170,16 +182,18 @@ class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
         image = tvf.to_tensor(image)
         image = tvf.normalize(image, self.mean, self.std)
 
-        scoreboard_im = np.zeros((rows, cols), dtype=np.float32)
-        scoreboard = cv2.fillConvexPoly(scoreboard_im, scoreboard.astype(np.int32), 1)
-        corners = transforms.place_gaussian(corners, 0.05, rows, cols, (rows, cols))
+        # scoreboard_im = np.zeros((rows, cols), dtype=np.float32)
+        # scoreboard = cv2.fillConvexPoly(scoreboard_im, scoreboard.astype(np.int32), 1)
+        scoreboard = transforms.CoordsToBox()(scoreboard)
+        corners = transforms.place_gaussian(corners, 0.05, rows, cols, self.corners_grid_size)
+        # corners = transforms.CoordsToGrid(self.corners_grid_size, self.size)(corners)
         # scoreboard = cv2.resize(scoreboard_im, (rows, cols), interpolation=cv2.INTER_NEAREST)
 
-        return image, corners, scoreboard
+        return image, (corners, scoreboard)
 
-    def statistics(self):
+    def compute_statistics(self):
         _ds = ImageFilesDataset(self.files, transform=tvt.ToTensor())
-        return ImageFilesDataset.compute_mean_std(_ds)
+        self.mean, self.std = ImageFilesDataset.compute_mean_std(_ds)
 
 
 def get_bounding_box_dataset(videos, clip_path, filter_valid=False, max_frames=None):
