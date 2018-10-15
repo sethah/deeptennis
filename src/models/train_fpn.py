@@ -10,6 +10,7 @@ import torch.utils.data as data
 import torch.nn.functional as F
 import torchvision.models as torch_models
 import torchvision.transforms as transforms
+from torch.utils.data.dataloader import default_collate
 
 from src.data.clip import Video
 from src.data.dataset import get_bounding_box_dataset, ImageFilesDatasetKeypoints
@@ -23,7 +24,6 @@ def valid(epoch, model, loader, optimizer, criterion, device):
     total_loss = 0.
     n = len(loader.sampler)
     model.eval()
-    # TODO: fix the device movement
     for inp, targ in loader:
         inp = inp.to(device)
         optimizer.zero_grad()
@@ -31,8 +31,8 @@ def valid(epoch, model, loader, optimizer, criterion, device):
         loss = criterion(preds, targ)
         total_loss += loss.item()
     total_loss /= n
-    logging.debug('Train Epoch: {} Validation Loss: {:.6f}'.format(epoch, loss))
-    return loss
+    logging.debug('Train Epoch: {} Validation Loss: {:.6f}'.format(epoch, total_loss))
+    return total_loss
 
 
 def train(epoch, model, loader, optimizer, criterion, device=torch.device("cpu"), log_interval=100):
@@ -76,7 +76,7 @@ def get_anchors(grid_size, im_size, box_size, angle_offset=0):
     return torch.from_numpy(boxes)
 
 
-def get_dataset(videos, score_path, court_path, max_frames=None):
+def get_dataset(videos, score_path, court_path, action_path, frame_path, max_frames=None):
     frames = []
     score_labels = []
     corner_labels = []
@@ -104,7 +104,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-save-path", type=str, default=None)
     parser.add_argument("--load-path", type=str, default=None)
-    parser.add_argument("--gpu", type=bool, default=False)
+    parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--n-valid", type=int, default=1)
@@ -114,14 +114,15 @@ if __name__ == "__main__":
     parser.add_argument("--img-width", type=int, default=224)
     parser.add_argument("--img-mean", type=str, default=None)
     parser.add_argument("--img-std", type=str, default=None)
-    parser.add_argument("--embed-size", type=int, default=32)
     parser.add_argument("--initial-lr", type=float, default=0.001)
     parser.add_argument("--lr-gamma", type=float, default=0.95)
     parser.add_argument('--model', type=str, default="")
     parser.add_argument('--restore', type=str, default="", help="{'best', 'latest'}")
     parser.add_argument('--checkpoint-path', type=str, default="")
     parser.add_argument('--frame-path', type=str, default="")
-    parser.add_argument('--clip-path', type=str, default="")
+    parser.add_argument('--court-path', type=str, default="")
+    parser.add_argument('--score-path', type=str, default="")
+    parser.add_argument('--action-path', type=str, default="")
     parser.add_argument('--checkpoint-file', type=str, default="")
     args = parser.parse_args()
 
@@ -131,6 +132,7 @@ if __name__ == "__main__":
     im_size = (args.img_height, args.img_width)
     use_gpu = args.gpu or torch.cuda.is_available()
     train_device = torch.device("cuda:0") if use_gpu else torch.device("cpu")
+    logging.debug(f"Training on device {train_device}.")
 
     frame_path = Path(args.frame_path)
     video_paths = list(frame_path.iterdir())
@@ -143,31 +145,16 @@ if __name__ == "__main__":
     valid_videos = [Video.from_dir(v) for v in video_paths[:args.n_valid]]
     logging.debug(f"Holding out match {[v.name for v in valid_videos]}")
 
-    im_size = (224, 224)
-    batch_size = 8
-    corners_grid_size = (54, 54)
+    im_size = (args.img_height, args.img_width)
+    batch_size = args.batch_size
     max_frames = 300
-
-    train_frames, train_corner_labels, train_score_labels = get_dataset(train_videos, score_path, court_path, max_frames=max_frames)
-    valid_frames, valid_corner_labels, valid_score_labels = get_dataset(valid_videos, score_path, court_path, max_frames=None)
-    train_ds = ImageFilesDatasetKeypoints(train_frames, corners=train_corner_labels,
-                                          scoreboard=train_score_labels,
-                                          size=im_size, corners_grid_size=corners_grid_size)
-    train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, shuffle=True,
-                                               num_workers=4)
-    valid_ds = ImageFilesDatasetKeypoints(valid_frames, corners=valid_corner_labels,
-                                          scoreboard=valid_score_labels,
-                                          size=im_size, corners_grid_size=corners_grid_size)
-    valid_loader = torch.utils.data.DataLoader(valid_ds, batch_size=batch_size, shuffle=False,
-                                               num_workers=4)
 
 
     class ModelHead(nn.Module):
 
         def __init__(self, in_channels, out_channels=6):
             super(ModelHead, self).__init__()
-            self.conv1_score = models.StdConv(in_channels, in_channels)
-            self.out_conv_score = nn.Conv2d(in_channels, out_channels, 3)
+            self.out_conv_score = nn.Conv2d(64, out_channels, 3)
             self.conv1_court = models.double_conv(in_channels, 64)
             self.conv2_court = models.double_conv(in_channels, 64)
             self.conv3_court = models.double_conv(in_channels, 64)
@@ -181,8 +168,9 @@ if __name__ == "__main__":
             court = torch.cat([F.interpolate(court1, scale_factor=4),
                                F.interpolate(court2, scale_factor=2),
                                court3], dim=1)
-            return [self.out_conv_court(self.conv4_court(court)),
-                    self.out_conv_score(self.conv1_score(x[1]))]
+            court = self.conv4_court(court)
+            return [self.out_conv_court(court),
+                    self.out_conv_score(court)]
 
     res = torch_models.resnet34(pretrained=True)
     for p in res.parameters():
@@ -218,18 +206,59 @@ if __name__ == "__main__":
             self.score_weight = score_weight
 
         def forward(self, preds, targ):
-            score_loss = self.score__criterion(preds[1], targ[1].to(preds[1].device))
+            score_loss = self.score_criterion(preds[1], targ[1].to(preds[1].device))
             court_loss = self.court_criterion(preds[0], targ[0].to(preds[0].device))
             return score_loss * self.score_weight + court_loss * self.court_weight
 
+    train_frames, train_corner_labels, train_score_labels = get_dataset(train_videos, score_path, court_path, action_path, frame_path, max_frames=max_frames)
+    valid_frames, valid_corner_labels, valid_score_labels = get_dataset(valid_videos, score_path, court_path, action_path, frame_path, max_frames=None)
+
+    def collate_fn(batch):
+        tensors = default_collate(batch)
+        return [tensors[0], (tensors[1], tensors[2])]
+    train_ds = ImageFilesDatasetKeypoints(train_frames, corners=train_corner_labels,
+                                          scoreboard=train_score_labels,
+                                          size=im_size, corners_grid_size=court_grid_size)
+    train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, shuffle=True,
+                                               num_workers=4, collate_fn=collate_fn)
+    valid_ds = ImageFilesDatasetKeypoints(valid_frames, corners=valid_corner_labels,
+                                          scoreboard=valid_score_labels,
+                                          size=im_size, corners_grid_size=court_grid_size)
+    valid_loader = torch.utils.data.DataLoader(valid_ds, batch_size=batch_size, shuffle=False,
+                                               num_workers=4, collate_fn=collate_fn)
+
     court_crit = nn.MSELoss(reduction='sum').to(train_device)
-    ssd_crit = SSDLoss(reduction='sum').to(train_device)
-    criterion = CombinedLoss(court_crit, ssd_crit, court_weight=1., score_weight=1.)
+    class_crit = nn.BCEWithLogitsLoss(reduction='sum').to(train_device)
+    reg_crit = nn.L1Loss(reduction='sum').to(train_device)
+    ssd_crit = SSDLoss(boxes, class_crit, reg_crit, scale_box, reduction='sum').to(train_device)
+    criterion = CombinedLoss(court_crit, ssd_crit, court_weight=1., score_weight=2.)
     model = model.to(train_device)
     trainable_params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(trainable_params, lr=args.initial_lr)
 
-    for epoch in range(args.n_epochs):
-        train(epoch, model, train_loader, optimizer, criterion,
-              device=train_device, log_interval=20)
-        valid(epoch, model, criterion, valid_loader, train_device)
+    lr_sched = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2, 4, 6], gamma=0.5)
+    logging.debug(f"Training {len(trainable_params)} parameters")
+
+    best_loss = 1000000.
+    if args.restore:
+        loaded = utils.load_checkpoint(args.checkpoint_path, best=args.restore == 'best')
+        model.load_state_dict(loaded['model'])
+        optimizer.load_state_dict(loaded['optimizer'])
+        lr_sched.load_state_dict(loaded['scheduler'])
+        best_loss = loaded.get('best_loss', best_loss)
+
+    for epoch in range(1, args.epochs + 1):
+        lr_sched.step()
+        logging.debug(f"Learning rate update: {lr_sched.get_lr()}")
+        train(epoch, model, train_loader, optimizer, criterion, device=train_device,
+              log_interval=args.log_interval)
+        loss = valid(epoch, model, valid_loader, optimizer, criterion, device=train_device)
+        if args.checkpoint_path:
+            save_dict = {'model': model.state_dict(),
+                         'optimizer': optimizer.state_dict(),
+                         'scheduler': lr_sched.state_dict(),
+                         'best_loss': best_loss}
+            utils.save_checkpoint(args.checkpoint_path, save_dict)
+            if loss < best_loss:
+                best_loss = loss
+                utils.save_checkpoint(args.checkpoint_path, save_dict, best=True)

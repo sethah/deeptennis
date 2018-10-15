@@ -1,5 +1,5 @@
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 import itertools
 import random
 import cv2
@@ -176,6 +176,25 @@ class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
         scoreboard = scoreboard * np.array([cols / cols_in, rows / rows_in])
 
         if self._train:
+            # print(corners)
+            for (x, y) in corners:
+                p = random.random()
+                if p < 0.2:
+                    # draw = ImageDraw.Draw(image)
+                    w = random.randint(20, 70)
+                    h = random.randint(20, 70)
+                    imarr = np.array(image)
+                    start_x, start_y = random.randint(0, cols - w), random.randint(0, rows - h)
+                    patch = imarr[start_y:start_y + h, start_x:start_x + w]
+                    x1, y1 = max(0, int(x - w / 2)), max(0, int(y - h / 2))
+                    patch = patch[:rows - y1, :cols - x1]
+                    # print(x, y, x1, y1, patch.shape)
+                    image.paste(Image.fromarray(patch), (x1, y1))
+                    # color = list(np.random.choice(range(256), size=3))
+                    # draw.polygon([(x - w, y - h), (x + w, y - h), (x + w, y + h), (x - w, y + h)],
+                    #              fill=color, outline=None)
+
+        if self._train:
             jitter = tvt.ColorJitter(brightness=0.1, hue=0.1, contrast=0.5, saturation=0.5)
             image = jitter(image)
 
@@ -189,7 +208,7 @@ class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
         # corners = transforms.CoordsToGrid(self.corners_grid_size, self.size)(corners)
         # scoreboard = cv2.resize(scoreboard_im, (rows, cols), interpolation=cv2.INTER_NEAREST)
 
-        return image, (corners, scoreboard)
+        return image, corners, scoreboard
 
     def compute_statistics(self):
         _ds = ImageFilesDataset(self.files, transform=tvt.ToTensor())
