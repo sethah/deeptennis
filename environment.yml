@@ -22,3 +22,4 @@ dependencies:
 - pip:
   - git+https://github.com/hmmlearn/hmmlearn.git
   - pytesseract
+  - ipdb

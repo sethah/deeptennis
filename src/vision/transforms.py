@@ -11,6 +11,8 @@ from sklearn.metrics.pairwise import rbf_kernel
 
 import torch
 import torchvision.transforms.functional as Fv
+import logging
+import time
 
 _pil_interpolation_to_str = {
     Image.NEAREST: 'PIL.Image.NEAREST',
@@ -620,15 +622,18 @@ class BoxToHeatmap(object):
 
 
 def place_gaussian(keypoints, gamma, height, width, grid_size):
-    ind = np.array(list(itertools.product(range(height), range(width))))
+    # TODO: the `rbf_kernel` call is really inneficient for large
+    # TODO: grid sizes and will slow down training
     class_maps = []
+    ind = np.array(list(itertools.product(range(grid_size[0]), range(grid_size[1]))))
     for coord in keypoints:
         if np.all(coord >= 0) and np.all(coord < np.array([height, width])):
-            hmap = rbf_kernel(ind, np.array(coord[::-1]).reshape(1, 2),
-                              gamma=gamma).reshape(height, width)
+            query = np.array([coord[1] * grid_size[0] / height, coord[0] * grid_size[1] / width])
+            hmap = rbf_kernel(ind, query.reshape(1, 2),
+                              gamma=gamma).reshape(grid_size[0], grid_size[1])
             hmap[hmap > 1] = 1.
             hmap[hmap < 0.0099] = 0.
-            class_maps.append(cv2.resize(hmap, grid_size))
+            class_maps.append(hmap)
         else:
             class_maps.append(np.zeros(grid_size))
     return np.array(class_maps, dtype=np.float32)
@@ -636,8 +641,14 @@ def place_gaussian(keypoints, gamma, height, width, grid_size):
 
 class TorchImageToNumpy(object):
 
-    def __init__(self):
-        pass
-
     def __call__(self, img_t):
-        return img_t.cpu().numpy().transpose(1, 2, 0)
+        img_np = img_t.cpu().numpy()
+        if img_t.dim() == 4:
+            img_np = img_np.transpose(0, 3, 1, 2)
+        elif img_t.dim() == 3:
+            img_np = img_np.transpose(1, 2, 0)
+        elif img_t.dim() == 2:
+            img_np = img_np
+        else:
+            raise ValueError(f"image dim must be 2, 3, or 4 but was {img_t.dim()}")
+        return img_np

@@ -1,4 +1,5 @@
 import numpy as np
+import time
 from PIL import Image, ImageDraw
 import itertools
 import random
@@ -109,15 +110,22 @@ class ImageFilesDatasetBox(ImageFilesDataset):
 class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
 
     def __init__(self, files, corners, scoreboard, mean=None, std=None,
-                 size=(224, 224), corners_grid_size=(56, 56)):
-        self.files = files
-        self.corners = corners
-        self.scoreboard = scoreboard
+                 size=(224, 224), corners_grid_size=(56, 56), repeat=1):
+        # TODO: handle mean and std better?
+        self.files = files * repeat
+        self.corners = np.repeat(corners, repeat, axis=0)
+        self.scoreboard = np.repeat(scoreboard, repeat, axis=0)
         self.mean = mean
         self.std = std
         self._train = True
         self.size = size
         self.corners_grid_size = corners_grid_size
+        # im_arrs = []
+        # for file in self.files:
+        #     img = Image.open(file)
+        #     sample = img.convert('RGB')
+        #     im_arrs.append(np.array(sample))
+        # self.im_arrs = np.array(im_arrs)
 
     def __getitem__(self, idx):
         # TODO: store labels as torch tensors
@@ -125,6 +133,7 @@ class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
         with open(file, 'rb') as f:
             img = Image.open(f)
             sample = img.convert('RGB')
+        # sample = Image.fromarray(self.im_arrs[idx])
         sample, corners, scoreboard = self.transform(sample, self.corners[idx],
                                                      self.scoreboard[idx])
         return sample, corners, scoreboard
@@ -139,8 +148,6 @@ class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
         self._train = True
 
     def transform(self, image, corners, scoreboard):
-        if self.mean is None:
-            self.compute_statistics()
         corners, scoreboard = corners.copy(), scoreboard.copy()
         cols0, rows0 = image.size
 
@@ -175,24 +182,20 @@ class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
         corners = corners * np.array([cols / cols_in, rows / rows_in])
         scoreboard = scoreboard * np.array([cols / cols_in, rows / rows_in])
 
+        # add random pixel patches to the court corners
         if self._train:
-            # print(corners)
             for (x, y) in corners:
                 p = random.random()
-                if p < 0.2:
-                    # draw = ImageDraw.Draw(image)
-                    w = random.randint(20, 70)
-                    h = random.randint(20, 70)
+                if p < 0.4:
+                    w = random.randint(20, 50)
+                    h = random.randint(20, 50)
                     imarr = np.array(image)
                     start_x, start_y = random.randint(0, cols - w), random.randint(0, rows - h)
                     patch = imarr[start_y:start_y + h, start_x:start_x + w]
                     x1, y1 = max(0, int(x - w / 2)), max(0, int(y - h / 2))
                     patch = patch[:rows - y1, :cols - x1]
-                    # print(x, y, x1, y1, patch.shape)
+                    patch = np.random.randint(0, 255, np.prod(patch.shape)).reshape(patch.shape).astype(np.uint8)
                     image.paste(Image.fromarray(patch), (x1, y1))
-                    # color = list(np.random.choice(range(256), size=3))
-                    # draw.polygon([(x - w, y - h), (x + w, y - h), (x + w, y + h), (x - w, y + h)],
-                    #              fill=color, outline=None)
 
         if self._train:
             jitter = tvt.ColorJitter(brightness=0.1, hue=0.1, contrast=0.5, saturation=0.5)
@@ -204,7 +207,7 @@ class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
         # scoreboard_im = np.zeros((rows, cols), dtype=np.float32)
         # scoreboard = cv2.fillConvexPoly(scoreboard_im, scoreboard.astype(np.int32), 1)
         scoreboard = transforms.CoordsToBox()(scoreboard)
-        corners = transforms.place_gaussian(corners, 0.05, rows, cols, self.corners_grid_size)
+        corners = transforms.place_gaussian(corners, 0.5, rows, cols, self.corners_grid_size)
         # corners = transforms.CoordsToGrid(self.corners_grid_size, self.size)(corners)
         # scoreboard = cv2.resize(scoreboard_im, (rows, cols), interpolation=cv2.INTER_NEAREST)
 
