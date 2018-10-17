@@ -17,10 +17,8 @@ class SSDLoss(nn.modules.loss._Loss):
         self.class_criterion = class_criterion
         self.reg_criterion = reg_criterion
         self.scale_box = scale_box
-        self.cnt = 0
 
     def forward(self, preds, targ):
-        self.cnt += 1
         self.anchor_boxes = self.anchor_boxes.to(preds.device)
         self.scale_box = self.scale_box.to(preds.device)
 
@@ -35,7 +33,7 @@ class SSDLoss(nn.modules.loss._Loss):
         keep = class_targ > 0
         conf_preds = torch.sigmoid(class_preds)
         conf_preds[keep] = 0.  # only find negatives
-        _, topthree = conf_preds.topk(3, 1)
+        _, topthree = conf_preds.topk(3, 1)  # TODO: make ratio configurable
         keep.scatter_(1, topthree, 1.)
         class_loss = self.class_criterion(class_preds[keep], class_targ[keep])
 
@@ -49,6 +47,4 @@ class SSDLoss(nn.modules.loss._Loss):
         #         reg_preds = anchor_points + reg_preds * self.scale_box
         reg_targ = (targ - anchor_points) / self.scale_box
         reg_loss = self.reg_criterion(reg_preds, reg_targ)
-        # if self.cnt % 5 == 0:
-        #     logging.debug(f"SSD Losses: {reg_loss}, {class_loss}")
         return class_loss + reg_loss

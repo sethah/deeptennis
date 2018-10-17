@@ -32,6 +32,8 @@ if __name__ == "__main__":
 
     img_path = Path(args.img_path)
     save_path = Path(args.save_path)
+    if not save_path.parent.exists():
+        save_path.parent.mkdir()
 
     out_size = (args.img_height, args.img_width)
     if args.grayscale:

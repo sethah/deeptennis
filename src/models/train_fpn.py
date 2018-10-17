@@ -113,8 +113,6 @@ def get_dataset(videos, score_path, court_path, action_path, frame_path, max_fra
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-save-path", type=str, default=None)
-    parser.add_argument("--load-path", type=str, default=None)
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=1)
@@ -130,7 +128,6 @@ if __name__ == "__main__":
     parser.add_argument("--initial-lr", type=float, default=0.001)
     parser.add_argument("--lr-gamma", type=float, default=0.95)
     parser.add_argument("--lr-milestones", type=str, default="2,4,6,8")
-    parser.add_argument('--model', type=str, default="")
     parser.add_argument('--restore', type=str, default="", help="{'best', 'latest'}")
     parser.add_argument('--checkpoint-path', type=str, default="")
     parser.add_argument('--frame-path', type=str, default="")
@@ -233,10 +230,8 @@ if __name__ == "__main__":
             self.score_criterion = score_criterion
             self.court_weight = court_weight
             self.score_weight = score_weight
-            self.cnt = 0
 
         def forward(self, preds, targ):
-            self.cnt += 1
             court_preds = preds[0] # (b, 4, 56, 56)
             court_targs = targ[0].to(court_preds.device)
             b = court_preds.shape[0]
@@ -252,8 +247,6 @@ if __name__ == "__main__":
 
             score_loss = self.score_criterion(preds[1], targ[1].to(preds[1].device))
             court_loss = self.court_criterion(preds_weighted, targets_weighted)
-            # if self.cnt % 5 == 0:
-            #     logging.debug(f"{score_loss}, {court_loss}")
             return score_loss * self.score_weight + court_loss * self.court_weight
 
     train_frames, train_corner_labels, train_score_labels = get_dataset(train_videos, score_path, court_path, action_path, frame_path, max_frames=max_frames)
