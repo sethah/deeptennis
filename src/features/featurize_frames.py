@@ -1,5 +1,4 @@
 import numpy as np
-import sys
 import argparse
 from pathlib import Path
 from tqdm import tqdm

@@ -246,6 +246,7 @@ class SamePad2d(nn.Module):
     def __repr__(self):
         return self.__class__.__name__
 
+
 class FPN(nn.Module):
     def __init__(self, C1, C2, C3, C4, C5, out_channels=128):
         super(FPN, self).__init__()
@@ -286,13 +287,6 @@ class FPN(nn.Module):
         x = self.C4(x)
         c4_out = x
         x = self.C5(x)
-        # p4_out = self.P4_conv1(x)
-        # p3_out = self.P3_conv1(c3_out) + F.interpolate(p4_out, scale_factor=2)
-        # p2_out = self.P2_conv1(c2_out) + F.interpolate(p3_out, scale_factor=2)
-        #
-        # p4_out = self.P4_conv2(p4_out)
-        # p3_out = self.P3_conv2(p3_out)
-        # p2_out = self.P2_conv2(p2_out)
 
         p5_out = self.P5_conv1(x)
         p4_out = self.P4_conv1(c4_out) + F.interpolate(p5_out, scale_factor=2)
@@ -308,3 +302,29 @@ class FPN(nn.Module):
         # subsampling from P5 with stride of 2.
         p6_out = self.P6(p5_out)
         return [p2_out, p3_out, p4_out, p5_out, p6_out]
+
+
+class CourtScoreHead(nn.Module):
+
+    def __init__(self, in_channels, out_channels=6):
+        super(CourtScoreHead, self).__init__()
+        self.out_conv_score = nn.Conv2d(64, out_channels, 3)
+        self.conv1_court = double_conv(in_channels, 64)
+        self.conv2_court = double_conv(in_channels, 64)
+        self.conv3_court = double_conv(in_channels, 64)
+        self.conv4_court = double_conv(in_channels, 64)
+        self.conv5_court = StdConv(64 * 4, 64, drop=0.4)
+        self.out_conv_court = nn.Conv2d(64, 4, 3)
+
+    def forward(self, x):
+        court1 = self.conv1_court(x[-2])
+        court2 = self.conv2_court(x[-3])
+        court3 = self.conv3_court(x[-4])
+        court4 = self.conv4_court(x[-5])
+        court = torch.cat([F.interpolate(court1, scale_factor=8),
+                           F.interpolate(court2, scale_factor=4),
+                           F.interpolate(court3, scale_factor=2),
+                           court4], dim=1)
+        court = self.conv5_court(court)
+        return [self.out_conv_court(court),
+                self.out_conv_score(court)]
