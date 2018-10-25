@@ -159,7 +159,13 @@ if __name__ == "__main__":
     C4 = res.layer3
     C5 = res.layer4
     head = models.CourtScoreHead(128, out_channels=6)
-    model = models.AnchorBoxModel([models.FPN(C1, C2, C3, C4, C5), head], im_size)
+    fpn = models.FPN(C1, C2, C3, C4, C5)
+    model = nn.Sequential(fpn, head)
+    sample_img = torch.randn(4, 3, im_size[0], im_size[1])
+    sample_out = model.forward(sample_img)
+    score_grid_size = tuple(sample_out[1][1].shape[-2:])
+    court_grid_size = tuple(sample_out[0].shape[-2:])
+    model = models.AnchorBoxModel([fpn, head], [score_grid_size], [(50, 20)], im_size, angle_scale=10)
     boxes = model.boxes.data.clone()
     offsets = model.offsets.data.clone()
 
@@ -168,10 +174,6 @@ if __name__ == "__main__":
         idx = model.get_best(boxes, coord.unsqueeze(0))
         coord_new = (coord - boxes[idx.item()]) / offsets[idx.item()]
         return idx, coord_new
-
-    sample_img = torch.randn(4, 3, im_size[0], im_size[1])
-    sample_out = model.forward(sample_img)
-    court_grid_size = tuple(sample_out[0].shape[-2:])
 
     train_frames, train_corner_labels, train_score_labels = get_dataset(train_videos, score_path, court_path, action_path, frame_path, max_frames=max_frames)
     valid_frames, valid_corner_labels, valid_score_labels = get_dataset(valid_videos, score_path, court_path, action_path, frame_path, max_frames=max_frames)

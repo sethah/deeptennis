@@ -338,23 +338,13 @@ class CourtScoreHead(nn.Module):
         out_score_reg = out_score[:, 1:, :, :]
         return [self.out_conv_court(court), (out_score_class, torch.tanh(out_score_reg))]
 
-    # def add_anchors(self, anchor_boxes):
-    #     self.boxes = torch.nn.Parameter(anchor_boxes.boxes, requires_grad=False)
-    #     self.offsets = torch.nn.Parameter(anchor_boxes.offsets, requires_grad=False)
-
 
 class AnchorBoxModel(nn.Module):
 
-    def __init__(self, stages, im_size):
+    def __init__(self, stages, grid_sizes, box_sizes, im_size, angle_scale):
         super(AnchorBoxModel, self).__init__()
         self.model = nn.Sequential(*stages)
-        sample_img = torch.randn(4, 3, im_size[0], im_size[1])
-        sample_out = self.model.forward(sample_img)
-        score_grid_size = tuple(sample_out[1][1].shape[-2:])
-
-        box_w, box_h = 50, 20
-        angle_scale = 10
-        self.boxes, self.offsets = self.get_anchors([score_grid_size], [(box_w, box_h)], im_size, angle_scale)
+        self.boxes, self.offsets = self.get_anchors(grid_sizes, box_sizes, im_size, angle_scale)
         self.boxes = torch.nn.Parameter(self.boxes, requires_grad=False)
         self.offsets = torch.nn.Parameter(self.offsets, requires_grad=False)
 
