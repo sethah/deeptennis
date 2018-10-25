@@ -1,10 +1,9 @@
+import math
+from typing import List, Tuple
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-import itertools
-
-import math
 
 
 class KeypointModel(nn.Module):
@@ -120,7 +119,7 @@ class SimplePose(KeypointModel):
 
 class PoseUNet(KeypointModel):
 
-    def __init__(self, keypoints, channels, filters, n_down=4, n_up=3):
+    def __init__(self, keypoints, channels, filters):
         super(PoseUNet, self).__init__(keypoints, channels)
         self.inc = InConv(channels, filters)
         self.down1 = Down(filters, filters * 2)
@@ -148,8 +147,8 @@ class PoseUNet(KeypointModel):
 
 
 class DoubleConv(nn.Module):
-    '''(conv => BN => ReLU) * 2'''
-    def __init__(self, in_ch, out_ch):
+
+    def __init__(self, in_ch: int, out_ch: int):
         super(DoubleConv, self).__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(in_ch, out_ch, 3, padding=1),
@@ -166,7 +165,8 @@ class DoubleConv(nn.Module):
 
 
 class InConv(nn.Module):
-    def __init__(self, in_ch, out_ch):
+
+    def __init__(self, in_ch: int, out_ch: int):
         super(InConv, self).__init__()
         self.conv = DoubleConv(in_ch, out_ch)
 
@@ -176,6 +176,7 @@ class InConv(nn.Module):
 
 
 class Down(nn.Module):
+
     def __init__(self, in_ch, out_ch):
         super(Down, self).__init__()
         self.mpconv = nn.Sequential(
@@ -221,8 +222,10 @@ class OutConv(nn.Module):
         x = self.conv(x)
         return x
 
+
 class SamePad2d(nn.Module):
-    """Mimics tensorflow's 'SAME' padding.
+    """
+    Mimics tensorflow's 'SAME' padding.
     """
 
     def __init__(self, kernel_size, stride):
@@ -250,6 +253,15 @@ class SamePad2d(nn.Module):
 
 
 class FPN(nn.Module):
+    """
+    A feature pyramid network.
+
+    Similar in concept to U-net, it downsample the image in stages, extracting coarse,
+    high-level features. It then upsamples in stages, combining coarse, high-level
+    features with fine-grained, low-level features.
+
+    Reference: https://arxiv.org/abs/1612.03144
+    """
     def __init__(self, C1, C2, C3, C4, C5, out_channels=128):
         super(FPN, self).__init__()
         self.C1 = C1
@@ -319,9 +331,6 @@ class CourtScoreHead(nn.Module):
         self.conv5_court = StdConv(64 * 4, 64, drop=0.4)
         self.out_conv_court = nn.Conv2d(64, 4, 3)
 
-        # self.boxes = None
-        # self.offsets = None
-
     def forward(self, x):
         court1 = self.conv1_court(x[-2])
         court2 = self.conv2_court(x[-3])
@@ -339,8 +348,16 @@ class CourtScoreHead(nn.Module):
 
 
 class AnchorBoxModel(nn.Module):
+    """
+    A model that wraps an SSD model, but holds anchor box data as parameters. These
+    parameters are saved along with the model and can be used at inference time.
+    """
 
-    def __init__(self, stages, grid_sizes, box_sizes, im_size, angle_scale):
+    def __init__(self, stages: List[nn.Module],
+                        grid_sizes: List[Tuple[int, int]],
+                        box_sizes: List[Tuple[int, int]],
+                        im_size: Tuple[int, int],
+                        angle_scale: int):
         super(AnchorBoxModel, self).__init__()
         self.model = nn.Sequential(*stages)
         self.boxes, self.offsets = self.get_anchors(grid_sizes, box_sizes, im_size, angle_scale)
@@ -350,7 +367,7 @@ class AnchorBoxModel(nn.Module):
     def forward(self, x):
         return self.model.forward(x)
 
-    def predict(self, loader, device):
+    def predict(self, loader: torch.utils.data.DataLoader, device: torch.device):
         self.eval()
         inps = []
         score_preds = []
@@ -372,7 +389,10 @@ class AnchorBoxModel(nn.Module):
         return inps, court_preds, score_preds
 
     @staticmethod
-    def get_anchors(grid_sizes, box_sizes, im_size, angle_scale):
+    def get_anchors(grid_sizes: List[Tuple[int, int]],
+                    box_sizes: List[Tuple[int, int]],
+                    im_size: Tuple[int, int],
+                    angle_scale: int):
         boxes = []
         offsets = []
         for gw, gh in grid_sizes:
@@ -391,6 +411,14 @@ class AnchorBoxModel(nn.Module):
         return torch.cat(boxes).type(torch.float32), torch.cat(offsets).type(torch.float32)
 
     @staticmethod
-    def get_best(boxes, label_boxes):
+    def get_best(boxes: torch.Tensor, label_boxes: torch.Tensor) -> torch.Tensor:
+        """
+        Given anchor boxes and a set of label boxes, match each label box
+        to the best anchor box.
+
+        :param boxes:
+        :param label_boxes:
+        :return:
+        """
         diff = label_boxes[:, :2].unsqueeze(1) - boxes[:, :2]
         return torch.pow(diff, 2).sum(dim=2).argmin(dim=1)

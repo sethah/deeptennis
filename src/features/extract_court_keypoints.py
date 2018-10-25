@@ -1,4 +1,3 @@
-import sys
 import json
 import numpy as np
 import argparse
@@ -6,14 +5,19 @@ from pathlib import Path
 import logging
 from logging.config import fileConfig
 import cv2
-from tqdm import tqdm
-import itertools
 import pickle
 
-from src import utils
 
+def mask_image(img: np.ndarray, pts: np.ndarray, dilate=False):
+    """
+    Zero out the irrelevant part of the court and do edge detection.
 
-def mask_image(img, pts, dilate=False):
+    TODO: separate the crop and the edge detection
+    :param img: original RGB image
+    :param pts: vertices of the cropping area. Pixels outside this polygon will be zeroed.
+    :param dilate: dilate image before
+    :return: cropped/edged image
+    """
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     cannyed_image = cv2.Canny(gray, 50, 200)
     if dilate:
@@ -40,7 +44,7 @@ def get_lines(lines, min_vert_len=100, min_horiz_len=100, min_vert_slope=1.5, ma
     return horizontal_lines, vertical_lines
 
 
-def slope(x1, y1, x2, y2):
+def slope(x1: float, y1: float, x2: float, y2: float):
     if x2 == x1:
         return 1000000.
     else:
