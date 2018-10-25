@@ -32,13 +32,6 @@ data: requirements
 	$(PYTHON_INTERPRETER) src/data/make_dataset.py
 
 ALL_VIDEOS=$(wildcard $(DATA_DIR)/raw/*.mp4)
-clips: $(addprefix $(DATA_DIR)/interim/clips/, $(addsuffix .pkl, $(basename $(notdir $(ALL_VIDEOS)))))
-$(DATA_DIR)/interim/clips/%.pkl: $(DATA_DIR)/interim/action_mask/%.npy
-	python src/features/court_bounding_boxes.py \
-	--mask-path $< \
-	--save-path $@ \
-	--frames-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \
-	--meta-file $(PROJECT_DIR)/src/match_meta.txt
 
 score_extract: $(addprefix $(DATA_DIR)/interim/scoreboard/, $(addsuffix .pkl, $(basename $(notdir $(ALL_VIDEOS)))))
 $(DATA_DIR)/interim/scoreboard/%.pkl: $(DATA_DIR)/processed/frames/%
