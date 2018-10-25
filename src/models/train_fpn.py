@@ -1,7 +1,6 @@
 import numpy as np
 import sys
 import argparse
-import functools
 from pathlib import Path
 import pickle
 import logging
@@ -15,7 +14,6 @@ from torch.utils.data.dataloader import default_collate
 from src.data.clip import Video
 from src.data.dataset import ImageFilesDatasetKeypoints
 from src.vision.transforms import *
-from src.models.loss import AnchorBoxes
 from src.models.loss import SSDLoss, CourtScoreLoss
 import src.models.models as models
 import src.utils as utils
@@ -23,7 +21,6 @@ import src.utils as utils
 
 def valid(epoch, model, loader, optimizer, criterion, device):
     total_loss = 0.
-    n = len(loader.sampler)
     n = 0
     model.eval()
     for inp, targ in loader:

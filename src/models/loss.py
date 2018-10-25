@@ -34,37 +34,6 @@ class SSDLoss(nn.Module):
         return class_loss + reg_loss
 
 
-class AnchorBoxes(object):
-
-    def __init__(self, grid_sizes, box_sizes, im_size, angle_scale):
-        self.im_size = im_size
-        self.boxes, self.offsets = AnchorBoxes.get_anchors(grid_sizes, box_sizes, im_size, angle_scale)
-
-    @staticmethod
-    def get_anchors(grid_sizes, box_sizes, im_size, angle_scale):
-        boxes = []
-        offsets = []
-        for gw, gh in grid_sizes:
-            ix = torch.arange(gw).unsqueeze(1).repeat(1, gh).view(-1)
-            iy = torch.arange(gh).unsqueeze(1).repeat(gw, 1).view(-1)
-            cw, ch = im_size[0] / gw, im_size[1] / gh
-            for bw, bh in box_sizes:
-                scale = torch.tensor([ch, cw, 1, 1, 1], dtype=torch.float32)
-                offset = torch.tensor([ch / 2, cw / 2, 0, 0, 0], dtype=torch.float32)
-                _boxes = torch.stack((iy, ix, torch.ones_like(ix) * bw, torch.ones_like(ix) * bh,
-                                      torch.zeros_like(ix)), dim=1).type(torch.float32)
-                _offsets = torch.ones((ix.shape[0], 5)) * \
-                           torch.tensor([ch / 2, cw / 2, bw / 2, bh / 2, angle_scale])
-                boxes.append(_boxes * scale + offset)
-                offsets.append(_offsets)
-        return torch.cat(boxes).type(torch.float32), torch.cat(offsets).type(torch.float32)
-
-    def get_best(self, label_boxes):
-        self.boxes = self.boxes.to(label_boxes.device)
-        diff = label_boxes[:, :2].unsqueeze(1) - self.boxes[:, :2]
-        return torch.pow(diff, 2).sum(dim=2).argmin(dim=1)
-
-
 class CourtScoreLoss(nn.Module):
 
     def __init__(self, court_criterion, score_criterion, court_weight=1., score_weight=1.):

@@ -1,5 +1,4 @@
 import argparse
-from logging.config import fileConfig
 import os
 from pathlib import Path
 

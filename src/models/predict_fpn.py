@@ -1,9 +1,5 @@
-import numpy as np
-import sys
 import argparse
 from pathlib import Path
-import pickle
-import logging
 from logging.config import fileConfig
 
 import torch.nn as nn
@@ -13,41 +9,10 @@ import torchvision.transforms as tvt
 from torch.utils.data.dataloader import default_collate
 
 from src.data.clip import Video
-from src.data.dataset import ImageFilesDatasetKeypoints, ImageFilesDataset
+from src.data.dataset import ImageFilesDataset
 from src.vision.transforms import *
-from src.models.loss import AnchorBoxes
-from src.models.loss import SSDLoss, CourtScoreLoss
 import src.models.models as models
 import src.utils as utils
-
-
-def get_dataset(videos, score_path, court_path, action_path, frame_path, max_frames=None):
-    frames = []
-    score_labels = []
-    corner_labels = []
-    for video in videos:
-        score_name = score_path / (video.name + ".pkl")
-        court_name = court_path / (video.name + ".pkl")
-        if not score_name.exists() or not court_name.exists():
-            continue
-        with open(score_name, 'rb') as f:
-            scores = pickle.load(f)
-        with open(court_name, 'rb') as f:
-            corners = pickle.load(f)
-        action_mask = np.load(action_path / (video.name + ".npy"))
-        cnt = 0
-        for (fname, box), (fname, coords), is_action in zip(scores, corners, action_mask):
-            if is_action and box != [0, 0, 0, 0] and np.any(coords):
-                # only use frames that are action and have valid labels
-                frames.append(frame_path / video.name / fname)
-                corner_labels.append([float(x) for x in coords])
-                score_labels.append(box)
-                cnt += 1
-            if max_frames is not None and cnt > max_frames:
-                break
-    score_labels = np.array(score_labels)
-    corner_labels = np.array(corner_labels).reshape(-1, 4, 2)
-    return frames, corner_labels, score_labels
 
 
 if __name__ == "__main__":
@@ -103,7 +68,6 @@ if __name__ == "__main__":
     action_mask = np.load(action_path)
     video = Video.from_dir(frame_path)
     frames = [f for i, f in enumerate(video.frames) if action_mask[i]]
-    print(len(frames), len(video.frames))
 
     tfms = tvt.Compose([tvt.Resize(im_size), tvt.ToTensor(), tvt.Normalize(ds_mean, ds_std)])
     ds = ImageFilesDataset(frames, transform=tfms)
@@ -135,7 +99,6 @@ if __name__ == "__main__":
     out_path.mkdir(exist_ok=True, parents=True)
     for i, im in enumerate(out_frames):
         full_path = str(out_path / ("%05d.jpg" % i))
-        print(full_path)
         cv2.imwrite(full_path, im)
 
 
