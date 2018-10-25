@@ -110,7 +110,8 @@ class ImageFilesDatasetBox(ImageFilesDataset):
 class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
 
     def __init__(self, files, corners, scoreboard, mean=None, std=None,
-                 size=(224, 224), corners_grid_size=(56, 56), repeat=1):
+                 size=(224, 224), corners_grid_size=(56, 56), repeat=1,
+                 anchor_boxes=None, anchor_transform=None):
         # TODO: handle mean and std better?
         self.files = files * repeat
         self.corners = np.repeat(corners, repeat, axis=0)
@@ -120,12 +121,8 @@ class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
         self._train = True
         self.size = size
         self.corners_grid_size = corners_grid_size
-        # im_arrs = []
-        # for file in self.files:
-        #     img = Image.open(file)
-        #     sample = img.convert('RGB')
-        #     im_arrs.append(np.array(sample))
-        # self.im_arrs = np.array(im_arrs)
+        self.anchor_boxes = anchor_boxes
+        self.anchor_transform = anchor_transform
 
     def __getitem__(self, idx):
         # TODO: store labels as torch tensors
@@ -133,10 +130,9 @@ class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
         with open(file, 'rb') as f:
             img = Image.open(f)
             sample = img.convert('RGB')
-        # sample = Image.fromarray(self.im_arrs[idx])
-        sample, corners, scoreboard = self.transform(sample, self.corners[idx],
+        sample, corners, scoreboard, scoreboard_idx = self.transform(sample, self.corners[idx],
                                                      self.scoreboard[idx])
-        return sample, corners, scoreboard
+        return sample, corners, scoreboard, scoreboard_idx
 
     def __len__(self):
         return len(self.files)
@@ -204,14 +200,14 @@ class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
         image = tvf.to_tensor(image)
         image = tvf.normalize(image, self.mean, self.std)
 
-        # scoreboard_im = np.zeros((rows, cols), dtype=np.float32)
-        # scoreboard = cv2.fillConvexPoly(scoreboard_im, scoreboard.astype(np.int32), 1)
         scoreboard = transforms.CoordsToBox()(scoreboard)
+        scoreboard = torch.from_numpy(scoreboard)
         corners = transforms.place_gaussian(corners, 0.5, rows, cols, self.corners_grid_size)
-        # corners = transforms.CoordsToGrid(self.corners_grid_size, self.size)(corners)
-        # scoreboard = cv2.resize(scoreboard_im, (rows, cols), interpolation=cv2.INTER_NEAREST)
+        scoreboard_idx, scoreboard = self.anchor_transform(scoreboard)
+        # scoreboard_idx = transforms.AnchorIndexes(self.anchor_boxes)(scoreboard)
+        # scoreboard = (scoreboard - self.anchor_boxes.boxes[scoreboard_idx.item()]) / self.anchor_boxes.offsets[scoreboard_idx.item()]
 
-        return image, corners, scoreboard
+        return image, corners, scoreboard, scoreboard_idx
 
     def compute_statistics(self):
         _ds = ImageFilesDataset(self.files, transform=tvt.ToTensor())

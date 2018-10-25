@@ -128,7 +128,6 @@ if __name__ == "__main__":
         save_path.parent.mkdir()
 
     mask = np.load(mask_path)
-    print(mask[-30:])
 
     match_name = frames_path.stem
     match_meta = match_metas[match_name]

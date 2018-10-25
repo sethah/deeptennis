@@ -1,5 +1,7 @@
 import numpy as np
+import sys
 import argparse
+import functools
 from pathlib import Path
 import pickle
 import logging
@@ -13,6 +15,7 @@ from torch.utils.data.dataloader import default_collate
 from src.data.clip import Video
 from src.data.dataset import ImageFilesDatasetKeypoints
 from src.vision.transforms import *
+from src.models.loss import AnchorBoxes
 from src.models.loss import SSDLoss, CourtScoreLoss
 import src.models.models as models
 import src.utils as utils
@@ -57,24 +60,6 @@ def train(epoch, model, loader, optimizer, criterion, device=torch.device("cpu")
                 100. * batch_idx / len(loader), total_loss / n))
             total_loss = 0.
             n = 0.
-
-
-def get_anchors(grid_size, im_size, box_size, angle_offset=0):
-    gw, gh = grid_size
-    iw, ih = im_size
-    bw, bh = box_size
-    cell_width = iw / gw
-    cell_height = ih / gh
-    cxs = np.arange(gh) * cell_width + cell_width / 2
-    cys = np.arange(gw) * cell_height + cell_height / 2
-    coords = itertools.product(cxs, cys)
-    box_centers = np.array(list([(y, x) for x, y in coords]))
-    boxes = np.concatenate([box_centers,
-                            np.ones((box_centers.shape[0], 1)) * bw,
-                            np.ones((box_centers.shape[0], 1)) * bh,
-                            np.ones((box_centers.shape[0], 1)) * angle_offset],
-                           axis=1).astype(np.float32)
-    return torch.from_numpy(boxes)
 
 
 def get_dataset(videos, score_path, court_path, action_path, frame_path, max_frames=None):
@@ -129,7 +114,6 @@ if __name__ == "__main__":
     parser.add_argument('--court-path', type=str, default="")
     parser.add_argument('--score-path', type=str, default="")
     parser.add_argument('--action-path', type=str, default="")
-    parser.add_argument('--checkpoint-file', type=str, default="")
     parser.add_argument('--validate-every', type=int, default=1)
     args = parser.parse_args()
 
@@ -174,46 +158,45 @@ if __name__ == "__main__":
     C3 = res.layer2
     C4 = res.layer3
     C5 = res.layer4
-    model = nn.Sequential(models.FPN(C1, C2, C3, C4, C5), models.CourtScoreHead(128))
+    head = models.CourtScoreHead(128, out_channels=6)
+    model = models.AnchorBoxModel([models.FPN(C1, C2, C3, C4, C5), head], im_size)
+    boxes = model.boxes.data.clone()
+    offsets = model.offsets.data.clone()
+
+
+    def anchor_transform(coord):
+        idx = model.get_best(boxes, coord.unsqueeze(0))
+        coord_new = (coord - boxes[idx.item()]) / offsets[idx.item()]
+        return idx, coord_new
 
     sample_img = torch.randn(4, 3, im_size[0], im_size[1])
     sample_out = model.forward(sample_img)
-    score_grid_size = tuple(sample_out[1].shape[-2:])
     court_grid_size = tuple(sample_out[0].shape[-2:])
-
-    box_w, box_h = 50, 20
-    angle_scale = 10
-    boxes = get_anchors(score_grid_size, im_size, (box_w, box_h), angle_offset=0)
-
-    scale_box = torch.tensor([im_size[0] / score_grid_size[0] / 2,
-                              im_size[1] / score_grid_size[1] / 2,
-                              box_w / 2, box_h / 2, angle_scale], device=train_device)
-
 
     train_frames, train_corner_labels, train_score_labels = get_dataset(train_videos, score_path, court_path, action_path, frame_path, max_frames=max_frames)
     valid_frames, valid_corner_labels, valid_score_labels = get_dataset(valid_videos, score_path, court_path, action_path, frame_path, max_frames=max_frames)
 
     def collate_fn(batch):
         tensors = default_collate(batch)
-        return [tensors[0], (tensors[1], tensors[2])]
+        return [tensors[0], (tensors[1], (tensors[2], tensors[3]))]
 
     train_ds = ImageFilesDatasetKeypoints(train_frames, corners=train_corner_labels,
                                           scoreboard=train_score_labels,
                                           size=im_size, corners_grid_size=court_grid_size,
-                                          mean=ds_mean, std=ds_std)
+                                          mean=ds_mean, std=ds_std, anchor_transform=anchor_transform)
     train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, shuffle=True,
                                                num_workers=args.num_workers, collate_fn=collate_fn)
     valid_ds = ImageFilesDatasetKeypoints(valid_frames, corners=valid_corner_labels,
                                           scoreboard=valid_score_labels,
                                           size=im_size, corners_grid_size=court_grid_size,
-                                          mean=ds_mean, std=ds_std)
+                                          mean=ds_mean, std=ds_std, anchor_transform=anchor_transform)
     valid_loader = torch.utils.data.DataLoader(valid_ds, batch_size=batch_size, shuffle=False,
                                                num_workers=args.num_workers, collate_fn=collate_fn)
 
     court_crit = nn.MSELoss().to(train_device)
     class_crit = nn.BCEWithLogitsLoss().to(train_device)
     reg_crit = nn.L1Loss().to(train_device)
-    ssd_crit = SSDLoss(boxes, class_crit, reg_crit, scale_box).to(train_device)
+    ssd_crit = SSDLoss(class_crit, reg_crit).to(train_device)
     criterion = CourtScoreLoss(court_crit, ssd_crit, court_weight=50., score_weight=1.)
     model = model.to(train_device)
     trainable_params = [p for p in model.parameters() if p.requires_grad]
@@ -244,7 +227,7 @@ if __name__ == "__main__":
                              'optimizer': optimizer.state_dict(),
                              'scheduler': lr_sched.state_dict(),
                              'best_loss': best_loss}
-                utils.save_checkpoint(args.checkpoint_path, save_dict)
                 if loss < best_loss:
                     best_loss = loss
                     utils.save_checkpoint(args.checkpoint_path, save_dict, best=True)
+                utils.save_checkpoint(args.checkpoint_path, save_dict)

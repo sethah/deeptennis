@@ -594,6 +594,16 @@ class CoordsToBox(object):
         return np.array([cx, cy, w, h, theta * 180 / np.pi], dtype=np.float32)
 
 
+class AnchorIndexes(object):
+
+    def __init__(self, boxes, offsets, ):
+        self.boxes = boxes
+        self.offsets = offsets
+
+    def __call__(self, coords):
+        return self.anchor_boxes.get_best(coords.unsqueeze(0))
+
+
 class BoxToHeatmap(object):
 
     def __init__(self, grid_size, gamma):

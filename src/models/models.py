@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from src.models.loss import AnchorBoxes
+import itertools
+
 import math
 
 
@@ -92,7 +95,7 @@ class SimplePose(KeypointModel):
         self.poses = nn.ModuleList()
         self.feats = nn.ModuleList()
         for i in range(1, layers):
-            self.feats.add_module("feat%d" % i, PoseFeatureBlock(nout, k, self.feature_kernel))
+            self.feats.add_module("feat%d" % i, PoseFeatureBlock(nout, keypoints, self.feature_kernel))
             self.poses.add_module("pose%d" % i, PoseBlock(3, nout, self.pose_kernel))
 
         self.feat1 = nn.Sequential(StdConv(nout, nout, self.feature_kernel, padding=self.feature_kernel // 2),
@@ -145,10 +148,10 @@ class PoseUNet(KeypointModel):
         return x
 
 
-class double_conv(nn.Module):
+class DoubleConv(nn.Module):
     '''(conv => BN => ReLU) * 2'''
     def __init__(self, in_ch, out_ch):
-        super(double_conv, self).__init__()
+        super(DoubleConv, self).__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(in_ch, out_ch, 3, padding=1),
             nn.BatchNorm2d(out_ch),
@@ -166,7 +169,7 @@ class double_conv(nn.Module):
 class InConv(nn.Module):
     def __init__(self, in_ch, out_ch):
         super(InConv, self).__init__()
-        self.conv = double_conv(in_ch, out_ch)
+        self.conv = DoubleConv(in_ch, out_ch)
 
     def forward(self, x):
         x = self.conv(x)
@@ -178,7 +181,7 @@ class Down(nn.Module):
         super(Down, self).__init__()
         self.mpconv = nn.Sequential(
             nn.MaxPool2d(2),
-            double_conv(in_ch, out_ch)
+            DoubleConv(in_ch, out_ch)
         )
 
     def forward(self, x):
@@ -196,7 +199,7 @@ class Up(nn.Module):
         else:
             self.up = nn.ConvTranspose2d(in_ch//2, in_ch//2, 2, stride=2)
 
-        self.conv = double_conv(in_ch, out_ch)
+        self.conv = DoubleConv(in_ch, out_ch)
 
     def forward(self, x1, x2):
         x1 = self.up(x1)
@@ -306,15 +309,19 @@ class FPN(nn.Module):
 
 class CourtScoreHead(nn.Module):
 
-    def __init__(self, in_channels, out_channels=6):
+    def __init__(self, in_channels, out_channels):
         super(CourtScoreHead, self).__init__()
+
         self.out_conv_score = nn.Conv2d(64, out_channels, 3)
-        self.conv1_court = double_conv(in_channels, 64)
-        self.conv2_court = double_conv(in_channels, 64)
-        self.conv3_court = double_conv(in_channels, 64)
-        self.conv4_court = double_conv(in_channels, 64)
+        self.conv1_court = DoubleConv(in_channels, 64)
+        self.conv2_court = DoubleConv(in_channels, 64)
+        self.conv3_court = DoubleConv(in_channels, 64)
+        self.conv4_court = DoubleConv(in_channels, 64)
         self.conv5_court = StdConv(64 * 4, 64, drop=0.4)
         self.out_conv_court = nn.Conv2d(64, 4, 3)
+
+        # self.boxes = None
+        # self.offsets = None
 
     def forward(self, x):
         court1 = self.conv1_court(x[-2])
@@ -326,5 +333,75 @@ class CourtScoreHead(nn.Module):
                            F.interpolate(court3, scale_factor=2),
                            court4], dim=1)
         court = self.conv5_court(court)
-        return [self.out_conv_court(court),
-                self.out_conv_score(court)]
+        out_score = self.out_conv_score(court)
+        out_score_class = out_score[:, 0, :, :]
+        out_score_reg = out_score[:, 1:, :, :]
+        return [self.out_conv_court(court), (out_score_class, torch.tanh(out_score_reg))]
+
+    # def add_anchors(self, anchor_boxes):
+    #     self.boxes = torch.nn.Parameter(anchor_boxes.boxes, requires_grad=False)
+    #     self.offsets = torch.nn.Parameter(anchor_boxes.offsets, requires_grad=False)
+
+
+class AnchorBoxModel(nn.Module):
+
+    def __init__(self, stages, im_size):
+        super(AnchorBoxModel, self).__init__()
+        self.model = nn.Sequential(*stages)
+        sample_img = torch.randn(4, 3, im_size[0], im_size[1])
+        sample_out = self.model.forward(sample_img)
+        score_grid_size = tuple(sample_out[1][1].shape[-2:])
+
+        box_w, box_h = 50, 20
+        angle_scale = 10
+        self.boxes, self.offsets = self.get_anchors([score_grid_size], [(box_w, box_h)], im_size, angle_scale)
+        self.boxes = torch.nn.Parameter(self.boxes, requires_grad=False)
+        self.offsets = torch.nn.Parameter(self.offsets, requires_grad=False)
+
+    def forward(self, x):
+        return self.model.forward(x)
+
+    def predict(self, loader, device):
+        self.eval()
+        inps = []
+        score_preds = []
+        court_preds = []
+        for inp, *_ in loader:
+            b = inp.shape[0]
+            inp = inp.to(device)
+            inps.append(inp.detach().cpu())
+            court, (class_score, reg_score) = self.forward(inp)
+            box_idxs = torch.argmax(class_score.view(b, -1), dim=1)
+            reg_score = reg_score.view(b, 5, -1)[torch.arange(b), :, box_idxs]
+            reg_score = reg_score * self.offsets[box_idxs] + self.boxes[box_idxs]
+
+            score_preds.append(reg_score.detach().cpu())
+            court_preds.append(court.detach().cpu())
+        court_preds = torch.cat(court_preds, dim=0)
+        score_preds = torch.cat(score_preds, dim=0)
+        inps = torch.cat(inps, dim=0).permute(0, 2, 3, 1)
+        return inps, court_preds, score_preds
+
+    @staticmethod
+    def get_anchors(grid_sizes, box_sizes, im_size, angle_scale):
+        boxes = []
+        offsets = []
+        for gw, gh in grid_sizes:
+            ix = torch.arange(gw).unsqueeze(1).repeat(1, gh).view(-1)
+            iy = torch.arange(gh).unsqueeze(1).repeat(gw, 1).view(-1)
+            cw, ch = im_size[0] / gw, im_size[1] / gh
+            for bw, bh in box_sizes:
+                scale = torch.tensor([ch, cw, 1, 1, 1], dtype=torch.float32)
+                offset = torch.tensor([ch / 2, cw / 2, 0, 0, 0], dtype=torch.float32)
+                _boxes = torch.stack((iy, ix, torch.ones_like(ix) * bw, torch.ones_like(ix) * bh,
+                                      torch.zeros_like(ix)), dim=1).type(torch.float32)
+                _offsets = torch.ones((ix.shape[0], 5)) * \
+                           torch.tensor([ch / 2, cw / 2, bw / 2, bh / 2, angle_scale])
+                boxes.append(_boxes * scale + offset)
+                offsets.append(_offsets)
+        return torch.cat(boxes).type(torch.float32), torch.cat(offsets).type(torch.float32)
+
+    @staticmethod
+    def get_best(boxes, label_boxes):
+        diff = label_boxes[:, :2].unsqueeze(1) - boxes[:, :2]
+        return torch.pow(diff, 2).sum(dim=2).argmin(dim=1)
