@@ -5,6 +5,7 @@ from pathlib import Path
 import pickle
 import logging
 from logging.config import fileConfig
+from typing import List
 
 import torch.nn as nn
 import torch.utils
@@ -19,7 +20,12 @@ import src.models.models as models
 import src.utils as utils
 
 
-def valid(epoch, model, loader, optimizer, criterion, device):
+def valid(epoch: int,
+          model: nn.Module,
+          loader: torch.utils.data.DataLoader,
+          optimizer: torch.optim.Optimizer,
+          criterion: nn.Module,
+          device: torch.device):
     total_loss = 0.
     n = 0
     model.eval()
@@ -35,7 +41,13 @@ def valid(epoch, model, loader, optimizer, criterion, device):
     return total_loss
 
 
-def train(epoch, model, loader, optimizer, criterion, device=torch.device("cpu"), log_interval=100):
+def train(epoch: int,
+          model: nn.Module,
+          loader: torch.utils.data.DataLoader,
+          optimizer: torch.optim.Optimizer,
+          criterion: nn.Module,
+          device=torch.device("cpu"),
+          log_interval=100):
     model.train()
     total_loss = 0.
     n = 0.
@@ -59,7 +71,12 @@ def train(epoch, model, loader, optimizer, criterion, device=torch.device("cpu")
             n = 0.
 
 
-def get_dataset(videos, score_path, court_path, action_path, frame_path, max_frames=None):
+def get_dataset(videos: List[Video],
+                score_path: Path,
+                court_path: Path,
+                action_path: Path,
+                frame_path: Path,
+                max_frames: int=None):
     frames = []
     score_labels = []
     corner_labels = []
@@ -202,8 +219,7 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(trainable_params, lr=args.initial_lr)
 
     lr_milestones = [int(x) for x in args.lr_milestones.split(",")]
-    lr_sched = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=lr_milestones,
-                                                    gamma=args.lr_gamma)
+    lr_sched = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=lr_milestones, gamma=args.lr_gamma)
     logging.debug(f"Training {len(trainable_params)} parameters")
 
     best_loss = 1000000.

@@ -196,6 +196,7 @@ def get_area(crd):
     h = abs(crd[7] - crd[1])
     return 0.5 * (a + b) * h
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mask-path", type=str)

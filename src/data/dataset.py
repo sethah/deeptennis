@@ -1,23 +1,38 @@
-import numpy as np
-from PIL import Image
-import itertools
-import random
 import cv2
-
-import logging
+import numpy as np
+from pathlib import Path
+from PIL import Image
+import random
+from typing import Callable, List
 
 import torch
 import torchvision.transforms as tvt
 import torchvision.transforms.functional as tvf
 
-from src.data.clip import ActionVideo
-import src.utils as utils
 import src.vision.transforms as transforms
+
+
+def compute_mean_std(ds: torch.utils.data.Dataset):
+    """
+    Compute the mean and standard deviation for each image channel.
+    """
+    tsum = 0.
+    tcount = 0.
+    tsum2 = 0.
+    for i in range(len(ds)):
+        im, *_ = ds[i]
+        im = im.view(im.shape[0], -1)
+        tsum = tsum + im.sum(dim=1)
+        tcount = tcount + im.shape[1]
+        tsum2 = tsum2 + (im * im).sum(dim=1)
+    mean = tsum / tcount
+    std = torch.sqrt(tsum2 / tcount - mean ** 2)
+    return mean, std
 
 
 class ImageFilesDataset(torch.utils.data.Dataset):
 
-    def __init__(self, files, labels=None, transform=None):
+    def __init__(self, files: List[Path], labels: np.ndarray=None, transform: Callable=None):
         self.transform = transform
         self.files = files
         self.labels = np.zeros(len(files)) if labels is None else labels
@@ -45,66 +60,13 @@ class ImageFilesDataset(torch.utils.data.Dataset):
     def statistics(self):
         std_transforms = tvt.Compose([tvt.ToTensor()])
         _ds = self.with_transforms(std_transforms)
-        return ImageFilesDataset.compute_mean_std(_ds)
-
-    @staticmethod
-    def compute_mean_std(ds):
-        """
-        Compute the mean and standard deviation for each image channel.
-        """
-        tsum = 0.
-        tcount = 0.
-        tsum2 = 0.
-        for i in range(len(ds)):
-            im, *_ = ds[i]
-            im = im.view(im.shape[0], -1)
-            tsum = tsum + im.sum(dim=1)
-            tcount = tcount + im.shape[1]
-            tsum2 = tsum2 + (im * im).sum(dim=1)
-        mean = tsum / tcount
-        std = torch.sqrt(tsum2 / tcount - mean ** 2)
-        return mean, std
-
-
-class ImageFilesDatasetBox(ImageFilesDataset):
-    """
-    A dataset that also applies transforms to a bounding polygon.
-    """
-
-    def __getitem__(self, idx):
-        # TODO: store labels as torch tensors
-        file = self.files[idx]
-        label = self.labels[idx]
-        with open(file, 'rb') as f:
-            img = Image.open(f)
-            sample = img.convert('RGB')
-        if self.transform is not None:
-            sample, label = self.transform(sample, label)
-        return sample, label
-
-    def transform(self, image, keypoints):
-        rows, cols = image.size
-
-        if random.random() > 0.5:
-            image = tvf.hflip(image)
-            keypoints[:, 0] = rows - keypoints[:, 0]
-            # TODO this doesn't generalize
-            keypoints = keypoints[np.array([1, 0, 3, 2, 5, 4, 7, 6])]
-
-        image = tvf.to_tensor(image)
-
-        return image, keypoints
-
-    def with_transforms(self, tfms):
-        return ImageFilesDatasetBox(self.files, self.labels, transform=tfms)
-
-    def statistics(self):
-        std_transforms = transforms.Compose([transforms.WrapTransform(tvt.ToTensor())])
-        _ds = self.with_transforms(std_transforms)
-        return ImageFilesDataset.compute_mean_std(_ds)
+        return compute_mean_std(_ds)
 
 
 class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
+    """
+    TODO: this class is way too hacky
+    """
 
     def __init__(self, files, corners, scoreboard, mean=None, std=None,
                  size=(224, 224), corners_grid_size=(56, 56), repeat=1,
@@ -201,41 +163,5 @@ class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
         scoreboard = torch.from_numpy(scoreboard)
         corners = transforms.place_gaussian(corners, 0.5, rows, cols, self.corners_grid_size)
         scoreboard_idx, scoreboard = self.anchor_transform(scoreboard)
-        # scoreboard_idx = transforms.AnchorIndexes(self.anchor_boxes)(scoreboard)
-        # scoreboard = (scoreboard - self.anchor_boxes.boxes[scoreboard_idx.item()]) / self.anchor_boxes.offsets[scoreboard_idx.item()]
 
         return image, corners, scoreboard, scoreboard_idx
-
-    def compute_statistics(self):
-        _ds = ImageFilesDataset(self.files, transform=tvt.ToTensor())
-        self.mean, self.std = ImageFilesDataset.compute_mean_std(_ds)
-
-
-def get_bounding_box_dataset(videos, clip_path, filter_valid=False, max_frames=None):
-    bboxes = []
-    frames = []
-    for video in videos:
-        clips = ActionVideo.load(clip_path / (video.name + ".pkl"))
-        invalid = 0
-        cnt = 0
-        for clip in clips:
-            img = cv2.imread(str(clip.frames[0]))
-            im_h, im_w, _ = img.shape
-            for frame, bbox in clip:
-                # TODO: bandaid code. Check for valid box elsewhere
-                bbox = bbox.reshape(-1, 2)
-                score_width = abs(bbox[5, 0] - bbox[4, 0])
-                if filter_valid and not utils.validate_court_box(*bbox[:4], im_w, im_h):
-                    invalid += 1
-                    continue
-                elif filter_valid and score_width < 10:
-                    invalid += 1
-                    continue
-                else:
-                    cnt += 1
-                    frames.append(frame)
-                    bboxes.append(bbox)
-            if max_frames and cnt > max_frames:
-                break
-        logging.debug(f"Filtered {invalid} invalid frames for {video.name}")
-    return ImageFilesDatasetBox(frames, bboxes)
