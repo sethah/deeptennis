@@ -163,9 +163,7 @@ if __name__ == "__main__":
     max_frames = None
 
     res = torch_models.resnet34(pretrained=True)
-    if args.freeze_backbone:
-        for p in res.parameters():
-            p.requires_grad = False
+    utils.freeze(res.parameters())
 
     C1 = nn.Sequential(res.conv1, res.bn1, res.relu, res.maxpool)
     C2 = res.layer1
@@ -184,7 +182,7 @@ if __name__ == "__main__":
     offsets = model.offsets.data.clone()
 
 
-    def anchor_transform(coord):
+    def anchor_transform(coord: np.ndarray):
         idx = model.get_best(boxes, coord.unsqueeze(0))
         coord_new = (coord - boxes[idx.item()]) / offsets[idx.item()]
         return idx, coord_new
@@ -221,6 +219,9 @@ if __name__ == "__main__":
     lr_milestones = [int(x) for x in args.lr_milestones.split(",")]
     lr_sched = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=lr_milestones, gamma=args.lr_gamma)
     logging.debug(f"Training {len(trainable_params)} parameters")
+    if not args.freeze_backbone:
+        utils.unfreeze(res.parameters())
+        optimizer.add_param_group({"name": "backbone", "params": res.parameters()})
 
     best_loss = 1000000.
     if args.restore:
@@ -229,6 +230,8 @@ if __name__ == "__main__":
         optimizer.load_state_dict(loaded['optimizer'])
         lr_sched.load_state_dict(loaded['scheduler'])
         best_loss = loaded.get('best_loss', best_loss)
+    for grp in optimizer.param_groups:
+        grp['lr'] = args.initial_lr
 
     for epoch in range(1, args.epochs + 1):
         lr_sched.step()

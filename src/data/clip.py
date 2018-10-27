@@ -1,11 +1,12 @@
 import numpy as np
 import pickle
 from pathlib import Path
+from typing import List, Union
 
 
 class Video(object):
 
-    def __init__(self, frames, ext='.jpg'):
+    def __init__(self, frames: List[Path], ext='.jpg'):
         self.frames = frames
         self.uri = Path(frames[0].parent)
         self.ext = ext
@@ -43,7 +44,7 @@ class Video(object):
         return len(self.frames)
 
     @classmethod
-    def from_dir(cls, folder, ext='.jpg'):
+    def from_dir(cls, folder: Union[str, Path], ext='.jpg'):
         folder = Path(folder)
         frames = sorted([f for f in folder.iterdir() if f.suffix == ext])
         return cls(frames, ext=ext)

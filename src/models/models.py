@@ -152,11 +152,12 @@ class DoubleConv(nn.Module):
         super(DoubleConv, self).__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(in_ch, out_ch, 3, padding=1),
-            nn.BatchNorm2d(out_ch),
             nn.ReLU(inplace=True),
-            nn.Conv2d(out_ch, out_ch, 3, padding=1),
             nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True)
+            nn.Conv2d(out_ch, out_ch, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(out_ch),
+            nn.Dropout(p=0.4)
         )
 
     def forward(self, x):
@@ -319,6 +320,11 @@ class FPN(nn.Module):
 
 
 class CourtScoreHead(nn.Module):
+    """
+    A prediction head that can be stacked on a feature pyramid. This head
+    outputs heatmaps for each court vertex as well as SSD predictions for the
+    scoreboard location and size.
+    """
 
     def __init__(self, in_channels, out_channels):
         super(CourtScoreHead, self).__init__()
@@ -414,11 +420,10 @@ class AnchorBoxModel(nn.Module):
     def get_best(boxes: torch.Tensor, label_boxes: torch.Tensor) -> torch.Tensor:
         """
         Given anchor boxes and a set of label boxes, match each label box
-        to the best anchor box.
+        to the best anchor box. It does this by matching each label box to the
+        anchor box with the closest center.
 
-        :param boxes:
-        :param label_boxes:
-        :return:
+        TODO: this should use Jaccard similarity
         """
         diff = label_boxes[:, :2].unsqueeze(1) - boxes[:, :2]
         return torch.pow(diff, 2).sum(dim=2).argmin(dim=1)

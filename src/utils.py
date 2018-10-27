@@ -1,7 +1,8 @@
+import logging
 import numpy as np
 import pandas as pd
 from pathlib import Path
-import logging
+from typing import Iterable
 
 import torch
 import torch.utils.data as data
@@ -64,12 +65,12 @@ def get_match_metadata(path):
     return d
 
 
-def freeze(params):
+def freeze(params: Iterable[torch.nn.Parameter]):
     for p in params:
         p.requires_grad = False
 
 
-def unfreeze(params):
+def unfreeze(params: Iterable[torch.nn.Parameter]):
     for p in params:
         p.requires_grad = True
 
@@ -91,7 +92,7 @@ def load_checkpoint(checkpoint_dir, best=False):
     checkpoint_dir = Path(checkpoint_dir)
     suffix = "latest.pkl" if not best else "best.pkl"
     load_path = checkpoint_dir / suffix
-    loaded = torch.load(load_path)
+    loaded = torch.load(load_path, map_location=lambda storage, loc: storage)
     logging.debug(f"Loaded checkpoint from {load_path.resolve().as_uri()}")
     return loaded
 
