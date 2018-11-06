@@ -28,15 +28,19 @@ make court_extract
 make score_extract
 ```
 
-##### Action
+## Results
+
+### Segment action frames
+
+#### Action
 
 ![Action Examples](https://github.com/sethah/deeptennis/blob/master/docs/static/img/action_examples.png)
 
-##### Not action
+#### Not action
 
 ![Not Action Examples](https://github.com/sethah/deeptennis/blob/master/docs/static/img/not_action_examples.png)
 
-#### Multi-task model for locating court and score bounding boxes
+### Multi-task model for locating court and score bounding boxes
 
 There are a few key components here. Detecting the court corners is very easy
 as long as the corners are not occluded. When they are, we need a model that has a
@@ -48,11 +52,11 @@ For the model, we can use a feature pyramid network to extract low and high leve
 features with a large receptive field. For training data, we use image augmentation
 to introduce occlusion.
 
-##### Image augmentation
+#### Image augmentation
 
 ![](https://github.com/sethah/deeptennis/blob/master/docs/static/img/image_augmentation.png)
 
-##### Occlusion predictions
+#### Occlusion predictions
 
 In the occluded examples below, the model still detects the correct corner location,
 but is less certain about the prediction. The probability mass is more spread out.
@@ -65,12 +69,10 @@ but is less certain about the prediction. The probability mass is more spread ou
 
 ![](https://github.com/sethah/deeptennis/blob/master/docs/static/img/nadal_marterer_french_occluded_hmap.png)
 
-##### Joint prediction
+#### Joint prediction
 
 The feature pyramid network is used as a feature extractor with a pre-trained Resnet 
 backbone. These features are used to jointly predict the court corners and the location
 of the scoreboard.
 
 ![](https://github.com/sethah/deeptennis/blob/master/docs/static/img/joint_prediction_outlines.png)
-
-
