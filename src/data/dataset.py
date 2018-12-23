@@ -164,4 +164,4 @@ class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
         corners = transforms.place_gaussian(corners, 0.5, rows, cols, self.corners_grid_size)
         scoreboard_idx, scoreboard = self.anchor_transform(scoreboard)
 
-        return image, corners, scoreboard, scoreboard_idx
+        return image.numpy(), corners, scoreboard.numpy(), scoreboard_idx.numpy()

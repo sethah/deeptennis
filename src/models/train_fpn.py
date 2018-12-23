@@ -2,73 +2,29 @@ import numpy as np
 import sys
 import argparse
 from pathlib import Path
+import ipdb
 import pickle
 import logging
 from logging.config import fileConfig
-from typing import List
+from typing import List, Iterable
+from itertools import islice
+
+from allennlp.training import Trainer as ATrainer
+from allennlp.training.learning_rate_schedulers import LearningRateWithoutMetricsWrapper, SlantedTriangular
+from allennlp.data.fields import ArrayField
+from allennlp.data import Instance
+from allennlp.data.iterators import DataIterator, BasicIterator
 
 import torch.nn as nn
 import torch.utils
 import torchvision.models as torch_models
-from torch.utils.data.dataloader import default_collate
+from torch.utils import data as torchdata
 
 from src.data.clip import Video
 from src.data.dataset import ImageFilesDatasetKeypoints
 from src.vision.transforms import *
-from src.models.loss import SSDLoss, CourtScoreLoss
 import src.models.models as models
 import src.utils as utils
-
-
-def valid(epoch: int,
-          model: nn.Module,
-          loader: torch.utils.data.DataLoader,
-          optimizer: torch.optim.Optimizer,
-          criterion: nn.Module,
-          device: torch.device):
-    total_loss = 0.
-    n = 0
-    model.eval()
-    for inp, targ in loader:
-        inp = inp.to(device)
-        optimizer.zero_grad()
-        preds = model.forward(inp)
-        loss = criterion(preds, targ)
-        total_loss += loss.item() * inp.shape[0]
-        n += inp.shape[0]
-    total_loss /= n
-    logging.debug('Train Epoch: {} Validation Loss: {:.6f}'.format(epoch, total_loss))
-    return total_loss
-
-
-def train(epoch: int,
-          model: nn.Module,
-          loader: torch.utils.data.DataLoader,
-          optimizer: torch.optim.Optimizer,
-          criterion: nn.Module,
-          device=torch.device("cpu"),
-          log_interval=100):
-    model.train()
-    total_loss = 0.
-    n = 0.
-    logging.debug(f"Begin training epoch: {epoch}")
-    for batch_idx, (inp, targ) in enumerate(loader):
-        inp = inp.to(device)
-        optimizer.zero_grad()
-        preds = model.forward(inp)
-        loss = criterion(preds, targ)
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.data.item() * inp.shape[0]
-        n += inp.shape[0]
-        if (batch_idx + 1) % log_interval == 0:
-            samples_processed = batch_idx * inp.shape[0]
-            total_samples = len(loader.sampler)
-            logging.debug('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, samples_processed, total_samples,
-                100. * batch_idx / len(loader), total_loss / n))
-            total_loss = 0.
-            n = 0.
 
 
 def get_dataset(videos: List[Video],
@@ -104,6 +60,16 @@ def get_dataset(videos: List[Video],
     corner_labels = np.array(corner_labels).reshape(-1, 4, 2)
     return frames, corner_labels, score_labels
 
+
+def tennis_data_to_allen(ds: torchdata.Dataset) -> Iterable[Instance]:
+    for (img, court, score_offset, score_class) in islice(ds, 100):
+        fields = {
+            'img': ArrayField(img),
+            'court': ArrayField(court),
+            'score_offset': ArrayField(score_offset),
+            'score_class': ArrayField(score_class)
+        }
+        yield Instance(fields)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -175,12 +141,11 @@ if __name__ == "__main__":
     model = nn.Sequential(fpn, head)
     sample_img = torch.randn(4, 3, im_size[0], im_size[1])
     sample_out = model.forward(sample_img)
-    score_grid_size = tuple(sample_out[1][1].shape[-2:])
-    court_grid_size = tuple(sample_out[0].shape[-2:])
+    score_grid_size = tuple(sample_out['score_offset'].shape[-2:])
+    court_grid_size = tuple(sample_out['court'].shape[-2:])
     model = models.AnchorBoxModel([fpn, head], [score_grid_size], [(50, 20)], im_size, angle_scale=10)
     boxes = model.boxes.data.clone()
     offsets = model.offsets.data.clone()
-
 
     def anchor_transform(coord: np.ndarray):
         idx = model.get_best(boxes, coord.unsqueeze(0))
@@ -190,62 +155,25 @@ if __name__ == "__main__":
     train_frames, train_corner_labels, train_score_labels = get_dataset(train_videos, score_path, court_path, action_path, frame_path, max_frames=max_frames)
     valid_frames, valid_corner_labels, valid_score_labels = get_dataset(valid_videos, score_path, court_path, action_path, frame_path, max_frames=max_frames)
 
-    def collate_fn(batch):
-        tensors = default_collate(batch)
-        return [tensors[0], (tensors[1], (tensors[2], tensors[3]))]
-
     train_ds = ImageFilesDatasetKeypoints(train_frames, corners=train_corner_labels,
                                           scoreboard=train_score_labels,
                                           size=im_size, corners_grid_size=court_grid_size,
                                           mean=ds_mean, std=ds_std, anchor_transform=anchor_transform)
-    train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, shuffle=True,
-                                               num_workers=args.num_workers, collate_fn=collate_fn)
     valid_ds = ImageFilesDatasetKeypoints(valid_frames, corners=valid_corner_labels,
                                           scoreboard=valid_score_labels,
                                           size=im_size, corners_grid_size=court_grid_size,
                                           mean=ds_mean, std=ds_std, anchor_transform=anchor_transform)
-    valid_loader = torch.utils.data.DataLoader(valid_ds, batch_size=batch_size, shuffle=False,
-                                               num_workers=args.num_workers, collate_fn=collate_fn)
+    batches_per_epoch = len(train_ds) / args.batch_size
+    train_ds = tennis_data_to_allen(train_ds)
+    valid_ds = tennis_data_to_allen(valid_ds)
+    iterator = BasicIterator(args.batch_size)
 
-    court_crit = nn.MSELoss().to(train_device)
-    class_crit = nn.BCEWithLogitsLoss().to(train_device)
-    reg_crit = nn.L1Loss().to(train_device)
-    ssd_crit = SSDLoss(class_crit, reg_crit).to(train_device)
-    criterion = CourtScoreLoss(court_crit, ssd_crit, court_weight=50., score_weight=1.)
-    model = model.to(train_device)
     trainable_params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(trainable_params, lr=args.initial_lr)
 
-    lr_milestones = [int(x) for x in args.lr_milestones.split(",")]
-    lr_sched = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=lr_milestones, gamma=args.lr_gamma)
-    logging.debug(f"Training {len(trainable_params)} parameters")
-    if not args.freeze_backbone:
-        utils.unfreeze(res.parameters())
-        optimizer.add_param_group({"name": "backbone", "params": res.parameters()})
-
-    best_loss = 1000000.
-    if args.restore:
-        loaded = utils.load_checkpoint(args.checkpoint_path, best=args.restore == 'best')
-        model.load_state_dict(loaded['model'])
-        optimizer.load_state_dict(loaded['optimizer'])
-        lr_sched.load_state_dict(loaded['scheduler'])
-        best_loss = loaded.get('best_loss', best_loss)
-    for grp in optimizer.param_groups:
-        grp['lr'] = args.initial_lr
-
-    for epoch in range(1, args.epochs + 1):
-        lr_sched.step()
-        logging.debug(f"Learning rate update: {lr_sched.get_lr()}")
-        train(epoch, model, train_loader, optimizer, criterion, device=train_device,
-              log_interval=args.log_interval)
-        if epoch % args.validate_every == 0:
-            loss = valid(epoch, model, valid_loader, optimizer, criterion, device=train_device)
-            if args.checkpoint_path:
-                save_dict = {'model': model.state_dict(),
-                             'optimizer': optimizer.state_dict(),
-                             'scheduler': lr_sched.state_dict(),
-                             'best_loss': best_loss}
-                if loss < best_loss:
-                    best_loss = loss
-                    utils.save_checkpoint(args.checkpoint_path, save_dict, best=True)
-                utils.save_checkpoint(args.checkpoint_path, save_dict)
+    lr_sched = SlantedTriangular(optimizer, 5, batches_per_epoch)
+    trainer = ATrainer(model, optimizer, iterator, train_ds, valid_ds,
+                       learning_rate_scheduler=LearningRateWithoutMetricsWrapper(lr_sched),
+                       serialization_dir=args.checkpoint_path,
+                       num_epochs=args.epochs)
+    trainer.train()

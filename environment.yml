@@ -23,4 +23,5 @@ dependencies:
   - git+https://github.com/hmmlearn/hmmlearn.git
   - pytesseract
   - ipdb
+  - allennlp
   - -e .
