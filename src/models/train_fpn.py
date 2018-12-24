@@ -1,22 +1,19 @@
-import numpy as np
-import sys
 import argparse
+import numpy as np
 from pathlib import Path
-import ipdb
 import pickle
 import logging
 from logging.config import fileConfig
-from typing import List, Iterable
+from typing import Iterable, List, Tuple
 from itertools import islice
 
 from allennlp.training import Trainer as ATrainer
 from allennlp.training.learning_rate_schedulers import LearningRateWithoutMetricsWrapper, SlantedTriangular
 from allennlp.data.fields import ArrayField
 from allennlp.data import Instance
-from allennlp.data.iterators import DataIterator, BasicIterator
+from allennlp.data.iterators import BasicIterator
 
 import torch.nn as nn
-import torch.utils
 import torchvision.models as torch_models
 from torch.utils import data as torchdata
 
@@ -32,7 +29,10 @@ def get_dataset(videos: List[Video],
                 court_path: Path,
                 action_path: Path,
                 frame_path: Path,
-                max_frames: int=None):
+                max_frames: int=None) -> Tuple[List[Path], np.ndarray, np.ndarray]:
+    """
+    Given a list of videos, get the court and corner labels for each.
+    """
     frames = []
     score_labels = []
     corner_labels = []
@@ -164,16 +164,19 @@ if __name__ == "__main__":
                                           size=im_size, corners_grid_size=court_grid_size,
                                           mean=ds_mean, std=ds_std, anchor_transform=anchor_transform)
     batches_per_epoch = len(train_ds) / args.batch_size
-    train_ds = tennis_data_to_allen(train_ds)
-    valid_ds = tennis_data_to_allen(valid_ds)
+    train_instances = tennis_data_to_allen(train_ds)
+    valid_instances = tennis_data_to_allen(valid_ds)
     iterator = BasicIterator(args.batch_size)
 
     trainable_params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(trainable_params, lr=args.initial_lr)
 
     lr_sched = SlantedTriangular(optimizer, 5, batches_per_epoch)
-    trainer = ATrainer(model, optimizer, iterator, train_ds, valid_ds,
+    trainer = ATrainer(model, optimizer, iterator, train_instances, valid_instances,
                        learning_rate_scheduler=LearningRateWithoutMetricsWrapper(lr_sched),
                        serialization_dir=args.checkpoint_path,
                        num_epochs=args.epochs)
     trainer.train()
+
+    preds = model.forward_on_instances(list(tennis_data_to_allen(train_ds)))[0]
+

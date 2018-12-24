@@ -3,8 +3,8 @@ from typing import Dict
 import torch
 import torch.nn as nn
 
-from src.trainer import Model
-
+from allennlp.data import Vocabulary
+from allennlp.models import Model
 
 class SSDLoss(nn.Module):
 
@@ -43,7 +43,7 @@ class SSDLoss(nn.Module):
 class CourtScoreLoss(Model):
 
     def __init__(self, court_criterion, score_criterion, court_weight=1., score_weight=1.):
-        super(CourtScoreLoss, self).__init__()
+        super(CourtScoreLoss, self).__init__(Vocabulary())
         self.court_criterion = court_criterion
         self.score_criterion = score_criterion
         self.court_weight = court_weight
