@@ -65,6 +65,8 @@ class ImageFilesDataset(torch.utils.data.Dataset):
 
 class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
     """
+    Implement a joint image and bounding box augmentation.
+
     TODO: this class is way too hacky
     """
 

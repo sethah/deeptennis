@@ -409,8 +409,6 @@ class AnchorBoxModel(Model):
     def decode(self, output_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """
         Convert the scoreboard predictions to image level coordinates.
-        :param output_dict:
-        :return:
         """
         court = output_dict['court']
         class_score = output_dict['score_class']
@@ -425,7 +423,7 @@ class AnchorBoxModel(Model):
     def get_anchors(grid_sizes: List[Tuple[int, int]],
                     box_sizes: List[Tuple[int, int]],
                     im_size: Tuple[int, int],
-                    angle_scale: int):
+                    angle_scale: int) -> Tuple[torch.Tensor, torch.Tensor]:
         boxes = []
         offsets = []
         for gw, gh in grid_sizes:

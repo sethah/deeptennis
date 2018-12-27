@@ -1,11 +1,10 @@
 import argparse
-import numpy as np
 from pathlib import Path
 import pickle
 import logging
 from logging.config import fileConfig
+fileConfig('logging_config.ini')
 from typing import Iterable, List, Tuple
-from itertools import islice
 
 from allennlp.training import Trainer as ATrainer
 from allennlp.training.learning_rate_schedulers import LearningRateWithoutMetricsWrapper, SlantedTriangular
@@ -14,8 +13,8 @@ from allennlp.data import Instance
 from allennlp.data.iterators import BasicIterator
 
 import torch.nn as nn
-import torchvision.models as torch_models
 from torch.utils import data as torchdata
+import torchvision.models as torch_models
 
 from src.data.clip import Video
 from src.data.dataset import ImageFilesDatasetKeypoints
@@ -62,14 +61,16 @@ def get_dataset(videos: List[Video],
 
 
 def tennis_data_to_allen(ds: torchdata.Dataset) -> Iterable[Instance]:
-    for (img, court, score_offset, score_class) in islice(ds, 100):
+    instances = []
+    for (img, court, score_offset, score_class) in ds:
         fields = {
             'img': ArrayField(img),
             'court': ArrayField(court),
             'score_offset': ArrayField(score_offset),
             'score_class': ArrayField(score_class)
         }
-        yield Instance(fields)
+        instances.append(Instance(fields))
+    return instances
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -86,16 +87,13 @@ if __name__ == "__main__":
     parser.add_argument("--img-mean", type=str, default=None)
     parser.add_argument("--img-std", type=str, default=None)
     parser.add_argument("--initial-lr", type=float, default=0.001)
-    parser.add_argument('--restore', type=str, default="", help="{'best', 'latest'}")
     parser.add_argument('--checkpoint-path', type=str, default="")
     parser.add_argument('--frame-path', type=str, default="")
     parser.add_argument('--court-path', type=str, default="")
     parser.add_argument('--score-path', type=str, default="")
     parser.add_argument('--action-path', type=str, default="")
-    parser.add_argument('--validate-every', type=int, default=1)
     args = parser.parse_args()
 
-    fileConfig('logging_config.ini')
     np.random.seed(args.seed)
 
     im_size = (args.img_height, args.img_width)
@@ -163,6 +161,7 @@ if __name__ == "__main__":
                                           mean=ds_mean, std=ds_std, anchor_transform=anchor_transform)
     valid_ds.eval()
     batches_per_epoch = len(train_ds) / args.batch_size
+    logging.debug(f"Batches per epoch: {batches_per_epoch}")
     train_instances = tennis_data_to_allen(train_ds)
     valid_instances = tennis_data_to_allen(valid_ds)
     iterator = BasicIterator(args.batch_size)
@@ -170,12 +169,13 @@ if __name__ == "__main__":
     trainable_params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(trainable_params, lr=args.initial_lr)
 
-    lr_sched = SlantedTriangular(optimizer, 5, batches_per_epoch)
+    lr_sched = SlantedTriangular(optimizer, args.epochs, int(batches_per_epoch))
     trainer = ATrainer(model, optimizer, iterator, train_instances, valid_instances,
                        learning_rate_scheduler=LearningRateWithoutMetricsWrapper(lr_sched),
                        serialization_dir=args.checkpoint_path,
-                       num_epochs=args.epochs)
+                       num_epochs=args.epochs,
+                       summary_interval=args.log_interval,
+                       should_log_learning_rate=True,
+                       cuda_device=0)
     trainer.train()
-
-    # preds = model.forward_on_instances(list(tennis_data_to_allen(train_ds)))[0]
 
