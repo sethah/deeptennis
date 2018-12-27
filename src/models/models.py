@@ -269,7 +269,13 @@ class FPN(nn.Module):
 
     Reference: https://arxiv.org/abs/1612.03144
     """
-    def __init__(self, C1, C2, C3, C4, C5, out_channels=128):
+    def __init__(self,
+                 C1: nn.Module,
+                 C2: nn.Module,
+                 C3: nn.Module,
+                 C4: nn.Module,
+                 C5: nn.Module,
+                 out_channels: int = 128):
         super(FPN, self).__init__()
         self.C1 = C1
         self.C2 = C2
@@ -298,6 +304,11 @@ class FPN(nn.Module):
             SamePad2d(kernel_size=3, stride=1),
             nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1),
         )
+
+    def get_grid_sizes(self, im_h, im_w):
+        x = torch.randn(1, 3, im_h, im_w)
+        out = self.forward(x)
+        return [tuple(o.shape[-2:]) for o in out]
 
     def forward(self, x):
         x = self.C1(x)
@@ -334,7 +345,7 @@ class CourtScoreHead(nn.Module):
         :param in_channels: input channels for each feature map.
         :param out_channels: the number of output channels for the score prediction.
         :param nmaps: the number of different sized feature maps. These maps should be ordered
-                      smallest to largest and should be in increasing powers of two. For example,
+                      largest to smallest and should be in increasing powers of two. For example,
                       `nmaps = 4` could have 4 feature maps of sizes [7x7, 14x14, 28x28, 56x56].
         """
         super(CourtScoreHead, self).__init__()
@@ -342,8 +353,8 @@ class CourtScoreHead(nn.Module):
         k = 64  # TODO: make configurable
         self.court_convs = nn.ModuleList([DoubleConv(in_channels, k) for _ in range(nmaps)])
         self.conv1 = StdConv(k * nmaps, k, drop=0.4)
-        self.out_conv_court = nn.Conv2d(k, 4, 3)
-        self.out_conv_score = nn.Conv2d(k, out_channels, 3)
+        self.out_conv_court = nn.Conv2d(k, 4, 3, padding=1)
+        self.out_conv_score = nn.Conv2d(k, out_channels, 3, padding=1)
 
     def forward(self, feature_maps):
         out = [layer.forward(feature_map) for layer, feature_map in

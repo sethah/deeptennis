@@ -86,8 +86,6 @@ if __name__ == "__main__":
     parser.add_argument("--img-mean", type=str, default=None)
     parser.add_argument("--img-std", type=str, default=None)
     parser.add_argument("--initial-lr", type=float, default=0.001)
-    parser.add_argument("--lr-gamma", type=float, default=0.95)
-    parser.add_argument("--lr-milestones", type=str, default="2,4,6,8")
     parser.add_argument('--restore', type=str, default="", help="{'best', 'latest'}")
     parser.add_argument('--checkpoint-path', type=str, default="")
     parser.add_argument('--frame-path', type=str, default="")
@@ -104,9 +102,6 @@ if __name__ == "__main__":
     use_gpu = args.gpu or torch.cuda.is_available()
     train_device = torch.device("cuda:0") if use_gpu else torch.device("cpu")
     logging.debug(f"Training on device {train_device}.")
-
-    ds_mean = [float(x) for x in args.img_mean.split(",")]
-    ds_std = [float(x) for x in args.img_std.split(",")]
 
     frame_path = Path(args.frame_path)
     score_path = Path(args.score_path)
@@ -132,18 +127,10 @@ if __name__ == "__main__":
     utils.freeze(res.parameters())
 
     C1 = nn.Sequential(res.conv1, res.bn1, res.relu, res.maxpool)
-    C2 = res.layer1
-    C3 = res.layer2
-    C4 = res.layer3
-    C5 = res.layer4
-    head = models.CourtScoreHead(128, out_channels=6)
-    fpn = models.FPN(C1, C2, C3, C4, C5)
-    model = nn.Sequential(fpn, head)
-    sample_img = torch.randn(4, 3, im_size[0], im_size[1])
-    sample_out = model.forward(sample_img)
-    score_grid_size = tuple(sample_out['score_offset'].shape[-2:])
-    court_grid_size = tuple(sample_out['court'].shape[-2:])
-    model = models.AnchorBoxModel([fpn, head], [score_grid_size], [(50, 20)], im_size, angle_scale=10)
+    fpn = models.FPN(C1, res.layer1, res.layer2, res.layer3, res.layer4)
+    grid_size = max(fpn.get_grid_sizes(im_size[0], im_size[1]))
+    head = models.CourtScoreHead(in_channels=128, out_channels=6)
+    model = models.AnchorBoxModel([fpn, head], [grid_size], [(50, 20)], im_size, angle_scale=10)
     boxes = model.boxes.data.clone()
     offsets = model.offsets.data.clone()
 
@@ -155,14 +142,26 @@ if __name__ == "__main__":
     train_frames, train_corner_labels, train_score_labels = get_dataset(train_videos, score_path, court_path, action_path, frame_path, max_frames=max_frames)
     valid_frames, valid_corner_labels, valid_score_labels = get_dataset(valid_videos, score_path, court_path, action_path, frame_path, max_frames=max_frames)
 
+    if args.img_mean is None:
+        logging.debug("Begin mean/std computation")
+        images = utils.read_images(train_frames)
+        ds_mean, ds_std = utils.compute_mean_std(images, nsample=1000)
+        ds_mean = [float(x) for x in list(ds_mean)]
+        ds_std = [float(x) for x in list(ds_std)]
+        logging.debug("End mean/std computation.")
+    else:
+        ds_mean = [float(x) for x in args.img_mean.split(",")]
+        ds_std = [float(x) for x in args.img_std.split(",")]
+
     train_ds = ImageFilesDatasetKeypoints(train_frames, corners=train_corner_labels,
                                           scoreboard=train_score_labels,
-                                          size=im_size, corners_grid_size=court_grid_size,
+                                          size=im_size, corners_grid_size=grid_size,
                                           mean=ds_mean, std=ds_std, anchor_transform=anchor_transform)
     valid_ds = ImageFilesDatasetKeypoints(valid_frames, corners=valid_corner_labels,
                                           scoreboard=valid_score_labels,
-                                          size=im_size, corners_grid_size=court_grid_size,
+                                          size=im_size, corners_grid_size=grid_size,
                                           mean=ds_mean, std=ds_std, anchor_transform=anchor_transform)
+    valid_ds.eval()
     batches_per_epoch = len(train_ds) / args.batch_size
     train_instances = tennis_data_to_allen(train_ds)
     valid_instances = tennis_data_to_allen(valid_ds)
@@ -178,5 +177,5 @@ if __name__ == "__main__":
                        num_epochs=args.epochs)
     trainer.train()
 
-    preds = model.forward_on_instances(list(tennis_data_to_allen(train_ds)))[0]
+    # preds = model.forward_on_instances(list(tennis_data_to_allen(train_ds)))[0]
 

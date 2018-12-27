@@ -19,6 +19,9 @@ dependencies:
 - jupyter
 - nb_conda
 - scikit-image
+- tensorboard
+- tensorflow
+- protobuf
 - pip:
   - git+https://github.com/hmmlearn/hmmlearn.git
   - pytesseract

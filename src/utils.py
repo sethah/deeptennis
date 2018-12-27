@@ -1,11 +1,14 @@
 import logging
+import itertools
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from PIL import Image
 from typing import Iterable
 
 import torch
 import torch.utils.data as data
+import torchvision.transforms as tvt
 
 
 def image_norm(image_iter):
@@ -38,21 +41,26 @@ def get_trapezoid(x2, y2, x3, y3, x4, y4):
     return np.array([x1, y1, x2, y2, x3, y3, x4, y4])
 
 
-def compute_mean_std(dataset, batch_size=32):
+def read_images(files: Iterable[Path]) -> Iterable[torch.Tensor]:
+    for file in files:
+        with open(file, 'rb') as f:
+            img = Image.open(f)
+            sample = img.convert('RGB')
+            yield tvt.ToTensor()(sample)
+
+
+def compute_mean_std(images: Iterable[torch.Tensor], nsample: int = -1):
     """
     Compute the mean and standard deviation for a data loader of image tensors.
     """
-    loader = data.DataLoader(dataset, shuffle=False, batch_size=batch_size)
-    tsum = 0.
-    tcount = 0.
-    tsum2 = 0.
-    for inp, *_ in loader:
-        inp = inp.transpose(1, 0).contiguous().view(3, -1)
-        tsum = tsum + inp.sum(dim=1)
-        tcount = tcount + inp.shape[1]
-        tsum2 = tsum2 + (inp * inp).sum(dim=1)
-    mean = tsum / tcount
-    std = torch.sqrt(tsum2 / tcount - mean**2)
+    if nsample == -1:
+        images = images
+    else:
+        images = itertools.islice(images, nsample)
+    X = torch.stack(list(images))
+    X = torch.transpose(X, 0, 1).contiguous().view(3, -1)
+    mean = torch.mean(X, dim=1)
+    std = torch.std(X, dim=1)
     return mean.numpy(), std.numpy()
 
 
@@ -65,12 +73,12 @@ def get_match_metadata(path):
     return d
 
 
-def freeze(params: Iterable[torch.nn.Parameter]):
+def freeze(params: Iterable[torch.nn.Parameter]) -> None:
     for p in params:
         p.requires_grad = False
 
 
-def unfreeze(params: Iterable[torch.nn.Parameter]):
+def unfreeze(params: Iterable[torch.nn.Parameter]) -> None:
     for p in params:
         p.requires_grad = True
 

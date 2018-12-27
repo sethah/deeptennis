@@ -106,7 +106,7 @@ class ImageFilesDatasetKeypoints(torch.utils.data.Dataset):
         corners, scoreboard = corners.copy(), scoreboard.copy()
         cols0, rows0 = image.size
 
-        # randomly add some pixels to the width
+        # randomly add some pixels to the width of the scoreboard
         scoreboard[2] += int(random.random() * 5 + 2)
         scoreboard = transforms.BoxToCoords()(scoreboard)
 
