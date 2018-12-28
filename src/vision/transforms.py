@@ -59,6 +59,22 @@ class CoordsToGrid(object):
         return grid
 
 
+def box_to_coords(boxes: torch.Tensor):
+    assert boxes.shape[1] == 5
+    x, y, w, h, theta = boxes.transpose(0, 1)
+    theta = theta * np.pi / 180.
+    phi = torch.atan(h / w)
+    d = w / 2 / torch.cos(phi)
+    x4 = x - d * torch.cos(theta - phi)
+    y4 = y + d * torch.sin(theta - phi)
+    x1 = x - d * torch.cos(theta + phi)
+    y1 = y + d * torch.sin(theta + phi)
+    x3 = x + d * torch.cos(theta + phi)
+    y3 = y - d * torch.sin(theta + phi)
+    x2 = x + d * torch.cos(theta - phi)
+    y2 = y - d * torch.sin(theta - phi)
+    return torch.stack([x1, y1, x2, y2, x3, y3, x4, y4], dim=1).view(-1, 4, 2)
+
 class BoxToCoords(object):
 
     def __call__(self, box):

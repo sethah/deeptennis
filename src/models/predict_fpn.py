@@ -2,6 +2,7 @@ import argparse
 from pathlib import Path
 import logging
 from logging.config import fileConfig
+from typing import Dict, List, Iterable, Tuple
 
 import torch.nn as nn
 import torch.utils
@@ -9,14 +10,15 @@ import torchvision.models as torch_models
 import torchvision.transforms as tvt
 from torch.utils.data.dataloader import default_collate
 
+from allennlp.data.fields import ArrayField
+from allennlp.data import Instance
+
 from src.data.clip import Video
 from src.data.dataset import ImageFilesDataset
 from src.vision.transforms import *
 import src.models.models as models
 import src.utils as utils
 
-
-# TODO: convert to AllenNLP abstractions
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -56,8 +58,9 @@ if __name__ == "__main__":
     head = models.CourtScoreHead(in_channels=128, out_channels=6)
     model = models.AnchorBoxModel([fpn, head], [grid_size], [(1, 1)], im_size, angle_scale=10)
 
-    loaded = utils.load_checkpoint(args.checkpoint_path, best=True)
-    model.load_state_dict(loaded['model'])
+    loaded = torch.load(args.checkpoint_path)
+    model.load_state_dict(loaded)
+    model.eval()
     model = model.to(device)
 
     action_mask = np.load(action_path)
@@ -66,16 +69,14 @@ if __name__ == "__main__":
 
     tfms = tvt.Compose([tvt.Resize(im_size), tvt.ToTensor(), tvt.Normalize(ds_mean, ds_std)])
     ds = ImageFilesDataset(frames, transform=tfms)
-    loader = torch.utils.data.DataLoader(ds, batch_size=batch_size, shuffle=False, num_workers=4)
-    inps, court_preds, score_preds = model.predict(loader, device)
+    instances = [Instance({'img': ArrayField(im.numpy())}) for im in ds]
 
-    score_coords = np.stack([BoxToCoords()(box) for box in score_preds])
-    hmaps = court_preds.numpy()
     im_size_full = cv2.imread(str(video.frames[0])).shape[:2]
-    x, y = np.unravel_index(np.argmax(hmaps.reshape(hmaps.shape[0], hmaps.shape[1], -1), axis=2), hmaps.shape[-2:])
-    resize_scale = np.array([im_size_full[1] / im_size[1], im_size_full[0] / im_size[0]])
-    court_rescale = np.array([im_size[1] / grid_size[1], im_size[0] / grid_size[0]])
-    court_vertices = np.stack([y, x], axis=2) * court_rescale * resize_scale
+    out: List[Dict[str, np.ndarray]] = model.forward_on_instances(instances)
+    out_score = torch.from_numpy(np.stack([o['score'] for o in out]))
+    out_court = torch.from_numpy(np.stack([o['court'] for o in out]))
+    score_coords = model.box_to_vertices(out_score, im_size_full[1], im_size_full[0])
+    court_coords = model.heatmaps_to_vertices(out_court, im_size_full[1], im_size_full[0])
 
     out_frames = []
     j = 0
@@ -84,9 +85,8 @@ if __name__ == "__main__":
         if not action_mask[i]:
             out_frames.append(im)
         else:
-            vertices = score_coords[j] * resize_scale
-            im = cv2.polylines(im, [vertices.astype(np.int32)], True, (0, 255, 255), 4)
-            im = cv2.polylines(im, [court_vertices[j].astype(np.int32)], True, (0, 255, 255), 4)
+            im = cv2.polylines(im, [score_coords[j].numpy().astype(np.int32)], True, (0, 255, 255), 4)
+            im = cv2.polylines(im, [court_coords[j].numpy().astype(np.int32)], True, (0, 255, 255), 4)
             out_frames.append(im)
             j += 1
 

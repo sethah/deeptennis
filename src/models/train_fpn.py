@@ -163,7 +163,7 @@ if __name__ == "__main__":
     trainable_params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(trainable_params, lr=args.initial_lr)
 
-    lr_sched = SlantedTriangular(optimizer, args.epochs, int(batches_per_epoch))
+    lr_sched = SlantedTriangular(optimizer, args.epochs, int(batches_per_epoch), cut_frac=0.03)
     trainer = ATrainer(model, optimizer, iterator, train_instances, valid_instances,
                        learning_rate_scheduler=LearningRateWithoutMetricsWrapper(lr_sched),
                        serialization_dir=args.checkpoint_path,

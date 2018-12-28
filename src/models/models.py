@@ -7,7 +7,7 @@ from allennlp.models import Model
 from allennlp.data import Vocabulary
 
 from src.models.loss import SSDLoss, CourtScoreLoss
-from src.vision.transforms import BoxToCoords
+from src.vision.transforms import BoxToCoords, box_to_coords
 
 import torch
 import torch.nn as nn
@@ -390,6 +390,8 @@ class AnchorBoxModel(Model):
         self.boxes, self.offsets = self.get_anchors(grid_sizes, box_sizes, im_size, angle_scale)
         self.boxes = torch.nn.Parameter(self.boxes, requires_grad=False)
         self.offsets = torch.nn.Parameter(self.offsets, requires_grad=False)
+        self.grid_sizes = grid_sizes
+        self.im_size = im_size
         court_crit = nn.MSELoss()
         class_crit = nn.BCEWithLogitsLoss()
         reg_crit = nn.L1Loss()
@@ -398,20 +400,21 @@ class AnchorBoxModel(Model):
 
     def forward(self,
                 img: torch.Tensor,
-                court: torch.Tensor,
-                score: torch.Tensor) -> Dict[str, torch.Tensor]:
+                court: torch.Tensor = None,
+                score: torch.Tensor = None) -> Dict[str, torch.Tensor]:
         out = self.model.forward(img)
-        score_class = AnchorBoxModel.get_best(self.boxes, score)
-        score_offset = (score - self.boxes[score_class]) / self.offsets[score_class]
-        labels = {'court': court, 'score_offset': score_offset, 'score_class': score_class}
-        loss = self.criterion(out, labels)
-        out['loss'] = loss
+        if court is not None:
+            score_class = AnchorBoxModel.get_best(self.boxes, score)
+            score_offset = (score - self.boxes[score_class]) / self.offsets[score_class]
+            labels = {'court': court, 'score_offset': score_offset, 'score_class': score_class}
+            loss = self.criterion(out, labels)
+            out['loss'] = loss
         return out
 
     @overrides
     def decode(self, output_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """
-        Convert the scoreboard predictions to image level coordinates.
+        Convert the scoreboard predictions to coordinates.
         """
         court = output_dict['court']
         class_score = output_dict['score_class']
@@ -422,19 +425,20 @@ class AnchorBoxModel(Model):
         reg_score = reg_score * self.offsets[box_idxs] + self.boxes[box_idxs]
         return {'court': court, 'score': reg_score}
 
-    @staticmethod
-    def heatmaps_to_vertices(heatmaps: torch.Tensor, width: int, height: int) -> List[Tuple[float]]:
+    def heatmaps_to_vertices(self, heatmaps: torch.Tensor, width: int, height: int) -> torch.Tensor:
         hmaps = heatmaps.detach().numpy()
-        grid_size = tuple(hmaps.shape[-2:])
+        grid_size = max(self.grid_sizes)
         x, y = np.unravel_index(
             np.argmax(hmaps.reshape(hmaps.shape[0], hmaps.shape[1], -1), axis=2), hmaps.shape[-2:])
         resize_scale = np.array([height / grid_size[1], width / grid_size[0]])
         court_vertices = np.stack([y, x], axis=2) * resize_scale
-        return court_vertices
+        return torch.from_numpy(court_vertices)
 
-    @staticmethod
-    def box_to_vertices(boxes: Iterable[np.ndarray]):
-        return np.stack([BoxToCoords()(b) for b in boxes])
+    def box_to_vertices(self, boxes: torch.Tensor, width: int, height: int):
+        coords = box_to_coords(boxes)
+        resize = torch.tensor([height / self.im_size[0], width / self.im_size[1]],
+                              dtype=torch.float32)
+        return coords * resize
 
     @staticmethod
     def get_anchors(grid_sizes: List[Tuple[int, int]],

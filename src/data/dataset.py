@@ -68,21 +68,19 @@ class CourtAndScoreTransform(object):
     def __init__(self,
                  mean: List[float],
                  std: List[float],
-                 size=(224, 224),
+                 size: Tuple[int, int] = (224, 224),
                  corners_grid_size: Tuple[int] = (56, 56),
                  train: bool = True):
-        # TODO: handle mean and std better?
         self.mean = mean
         self.std = std
         self._train = train
         self.size = size
         self.corners_grid_size = corners_grid_size
-        self.anchor_transform = anchor_transform
 
     def __call__(self,
                  image: Image.Image,
                  corners: np.ndarray,
-                 score: np.ndarray) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+                 score: np.ndarray) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         corners, scoreboard = corners.copy(), score.copy()
         cols0, rows0 = image.size
 
