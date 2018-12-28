@@ -27,4 +27,6 @@ dependencies:
   - pytesseract
   - ipdb
   - allennlp
+  - augmentor
+  - albumentations
   - -e .

@@ -1,11 +1,13 @@
+import numpy as np
 import math
 from overrides import overrides
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Iterable
 
 from allennlp.models import Model
 from allennlp.data import Vocabulary
 
 from src.models.loss import SSDLoss, CourtScoreLoss
+from src.vision.transforms import BoxToCoords
 
 import torch
 import torch.nn as nn
@@ -397,9 +399,10 @@ class AnchorBoxModel(Model):
     def forward(self,
                 img: torch.Tensor,
                 court: torch.Tensor,
-                score_offset: torch.Tensor,
-                score_class: torch.Tensor) -> Dict[str, torch.Tensor]:
+                score: torch.Tensor) -> Dict[str, torch.Tensor]:
         out = self.model.forward(img)
+        score_class = AnchorBoxModel.get_best(self.boxes, score)
+        score_offset = (score - self.boxes[score_class]) / self.offsets[score_class]
         labels = {'court': court, 'score_offset': score_offset, 'score_class': score_class}
         loss = self.criterion(out, labels)
         out['loss'] = loss
@@ -418,6 +421,20 @@ class AnchorBoxModel(Model):
         reg_score = reg_score.view(b, 5, -1)[torch.arange(b), :, box_idxs]
         reg_score = reg_score * self.offsets[box_idxs] + self.boxes[box_idxs]
         return {'court': court, 'score': reg_score}
+
+    @staticmethod
+    def heatmaps_to_vertices(heatmaps: torch.Tensor, width: int, height: int) -> List[Tuple[float]]:
+        hmaps = heatmaps.detach().numpy()
+        grid_size = tuple(hmaps.shape[-2:])
+        x, y = np.unravel_index(
+            np.argmax(hmaps.reshape(hmaps.shape[0], hmaps.shape[1], -1), axis=2), hmaps.shape[-2:])
+        resize_scale = np.array([height / grid_size[1], width / grid_size[0]])
+        court_vertices = np.stack([y, x], axis=2) * resize_scale
+        return court_vertices
+
+    @staticmethod
+    def box_to_vertices(boxes: Iterable[np.ndarray]):
+        return np.stack([BoxToCoords()(b) for b in boxes])
 
     @staticmethod
     def get_anchors(grid_sizes: List[Tuple[int, int]],

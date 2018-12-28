@@ -16,6 +16,8 @@ import src.models.models as models
 import src.utils as utils
 
 
+# TODO: convert to AllenNLP abstractions
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--gpu", type=int, default=0)
@@ -49,18 +51,10 @@ if __name__ == "__main__":
 
     res = torch_models.resnet34(pretrained=True)
     C1 = nn.Sequential(res.conv1, res.bn1, res.relu, res.maxpool)
-    C2 = res.layer1
-    C3 = res.layer2
-    C4 = res.layer3
-    C5 = res.layer4
-    head = models.CourtScoreHead(128, out_channels=6)
-    fpn = models.FPN(C1, C2, C3, C4, C5)
-    model = nn.Sequential(fpn, head)
-    sample_img = torch.randn(4, 3, im_size[0], im_size[1])
-    sample_out = model.forward(sample_img)
-    score_grid_size = tuple(sample_out[1][1].shape[-2:])
-    court_grid_size = tuple(sample_out[0].shape[-2:])
-    model = models.AnchorBoxModel([fpn, head], [score_grid_size], [(1, 1)], im_size, angle_scale=10)
+    fpn = models.FPN(C1, res.layer1, res.layer2, res.layer3, res.layer4)
+    grid_size = max(fpn.get_grid_sizes(im_size[0], im_size[1]))
+    head = models.CourtScoreHead(in_channels=128, out_channels=6)
+    model = models.AnchorBoxModel([fpn, head], [grid_size], [(1, 1)], im_size, angle_scale=10)
 
     loaded = utils.load_checkpoint(args.checkpoint_path, best=True)
     model.load_state_dict(loaded['model'])
@@ -80,7 +74,7 @@ if __name__ == "__main__":
     im_size_full = cv2.imread(str(video.frames[0])).shape[:2]
     x, y = np.unravel_index(np.argmax(hmaps.reshape(hmaps.shape[0], hmaps.shape[1], -1), axis=2), hmaps.shape[-2:])
     resize_scale = np.array([im_size_full[1] / im_size[1], im_size_full[0] / im_size[0]])
-    court_rescale = np.array([im_size[1] / court_grid_size[1], im_size[0] / court_grid_size[0]])
+    court_rescale = np.array([im_size[1] / grid_size[1], im_size[0] / grid_size[0]])
     court_vertices = np.stack([y, x], axis=2) * court_rescale * resize_scale
 
     out_frames = []

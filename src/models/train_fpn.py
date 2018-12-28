@@ -17,7 +17,7 @@ from torch.utils import data as torchdata
 import torchvision.models as torch_models
 
 from src.data.clip import Video
-from src.data.dataset import ImageFilesDatasetKeypoints
+from src.data.dataset import CourtAndScoreTransform, ImagePathsDataset
 from src.vision.transforms import *
 import src.models.models as models
 import src.utils as utils
@@ -62,12 +62,11 @@ def get_dataset(videos: List[Video],
 
 def tennis_data_to_allen(ds: torchdata.Dataset) -> Iterable[Instance]:
     instances = []
-    for (img, court, score_offset, score_class) in ds:
+    for (img, court, score) in ds:
         fields = {
             'img': ArrayField(img),
             'court': ArrayField(court),
-            'score_offset': ArrayField(score_offset),
-            'score_class': ArrayField(score_class)
+            'score': ArrayField(score),
         }
         instances.append(Instance(fields))
     return instances
@@ -132,11 +131,6 @@ if __name__ == "__main__":
     boxes = model.boxes.data.clone()
     offsets = model.offsets.data.clone()
 
-    def anchor_transform(coord: np.ndarray):
-        idx = model.get_best(boxes, coord.unsqueeze(0))
-        coord_new = (coord - boxes[idx.item()]) / offsets[idx.item()]
-        return idx, coord_new
-
     train_frames, train_corner_labels, train_score_labels = get_dataset(train_videos, score_path, court_path, action_path, frame_path, max_frames=max_frames)
     valid_frames, valid_corner_labels, valid_score_labels = get_dataset(valid_videos, score_path, court_path, action_path, frame_path, max_frames=max_frames)
 
@@ -151,15 +145,15 @@ if __name__ == "__main__":
         ds_mean = [float(x) for x in args.img_mean.split(",")]
         ds_std = [float(x) for x in args.img_std.split(",")]
 
-    train_ds = ImageFilesDatasetKeypoints(train_frames, corners=train_corner_labels,
-                                          scoreboard=train_score_labels,
-                                          size=im_size, corners_grid_size=grid_size,
-                                          mean=ds_mean, std=ds_std, anchor_transform=anchor_transform)
-    valid_ds = ImageFilesDatasetKeypoints(valid_frames, corners=valid_corner_labels,
-                                          scoreboard=valid_score_labels,
-                                          size=im_size, corners_grid_size=grid_size,
-                                          mean=ds_mean, std=ds_std, anchor_transform=anchor_transform)
-    valid_ds.eval()
+    train_transform = CourtAndScoreTransform(mean=ds_mean, std=ds_std, size=im_size,
+                                             corners_grid_size=grid_size)
+    valid_transform = CourtAndScoreTransform(mean=ds_mean, std=ds_std, size=im_size,
+                                             corners_grid_size=grid_size,
+                                             train=False)
+    train_ds = ImagePathsDataset(train_frames, train_corner_labels, train_score_labels,
+                                 transform=train_transform)
+    valid_ds = ImagePathsDataset(valid_frames, valid_corner_labels, valid_score_labels,
+                                 transform=valid_transform)
     batches_per_epoch = len(train_ds) / args.batch_size
     logging.debug(f"Batches per epoch: {batches_per_epoch}")
     train_instances = tennis_data_to_allen(train_ds)
@@ -176,6 +170,6 @@ if __name__ == "__main__":
                        num_epochs=args.epochs,
                        summary_interval=args.log_interval,
                        should_log_learning_rate=True,
-                       cuda_device=0)
+                       cuda_device=0 if args.gpu else -1)
     trainer.train()
 
