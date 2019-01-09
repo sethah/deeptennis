@@ -1,9 +1,15 @@
 import cv2
+import json
 import numpy as np
 from pathlib import Path
 from PIL import Image
 import random
-from typing import Callable, List, Tuple
+from typing import Callable, List, Tuple, Iterable
+
+from allennlp.data.dataset_readers import DatasetReader
+from allennlp.data.fields import ArrayField
+from allennlp.data import Instance
+from allennlp.common import Registrable
 
 import torch
 import torchvision.transforms as tvt
@@ -63,7 +69,13 @@ class ImageFilesDataset(torch.utils.data.Dataset):
         return compute_mean_std(_ds)
 
 
-class CourtAndScoreTransform(object):
+class TennisTransform(Registrable):
+
+    def __call__(self, *args, **kwargs):
+        raise NotImplementedError
+
+@TennisTransform.register("court_score")
+class CourtAndScoreTransform(TennisTransform):
 
     def __init__(self,
                  mean: List[float],
@@ -85,8 +97,9 @@ class CourtAndScoreTransform(object):
         cols0, rows0 = image.size
 
         # randomly add some pixels to the width of the scoreboard
-        scoreboard[2] += int(random.random() * 5 + 2)
-        scoreboard = transforms.BoxToCoords()(scoreboard)
+        # TODO: revisit?
+        # scoreboard[2] += int(random.random() * 5 + 2)
+        # scoreboard = transforms.BoxToCoords()(scoreboard)
 
         rows, cols = rows0, cols0
         if self._train:
@@ -172,66 +185,39 @@ class ImagePathsDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.files)
 
-    # def transform(self, image, corners, scoreboard):
-    #     corners, scoreboard = corners.copy(), scoreboard.copy()
-    #     cols0, rows0 = image.size
-    #
-    #     # randomly add some pixels to the width of the scoreboard
-    #     scoreboard[2] += int(random.random() * 5 + 2)
-    #     scoreboard = transforms.BoxToCoords()(scoreboard)
-    #
-    #     rows, cols = rows0, cols0
-    #     if self._train:
-    #         if random.random() > 0.5:
-    #             image = tvf.hflip(image)
-    #             corners[:, 0] = cols - corners[:, 0]
-    #             scoreboard[:, 0] = cols - scoreboard[:, 0]
-    #             corners = corners[np.array([1, 0, 3, 2])]
-    #             scoreboard = scoreboard[np.array([1, 0, 3, 2])]
-    #
-    #     if self._train:
-    #         resample, expand, center = False, True, None
-    #         angle = random.uniform(-10, 10)
-    #         M = cv2.getRotationMatrix2D((cols // 2, rows // 2), angle, 1)
-    #         corners = np.dot(M, np.concatenate([corners.T, np.ones((1, corners.shape[0]))])).astype(int).T
-    #         scoreboard = np.dot(M, np.concatenate([scoreboard.T, np.ones((1, scoreboard.shape[0]))])).astype(int).T
-    #         image = tvf.rotate(image, angle, resample, expand, center)
-    #         cols, rows = image.size
-    #         corners = corners + np.array([(cols - cols0) // 2, (rows - rows0) // 2])
-    #         scoreboard = scoreboard + np.array([(cols - cols0) // 2, (rows - rows0) // 2])
-    #
-    #     cols_in, rows_in = cols, rows
-    #     final_size = self.size
-    #     image = tvf.resize(image, final_size, Image.BILINEAR)
-    #     cols, rows = image.size
-    #     corners = corners * np.array([cols / cols_in, rows / rows_in])
-    #     scoreboard = scoreboard * np.array([cols / cols_in, rows / rows_in])
-    #
-    #     # add random pixel patches to the court corners
-    #     if self._train:
-    #         for (x, y) in corners:
-    #             p = random.random()
-    #             if p < 0.4:
-    #                 w = random.randint(20, 50)
-    #                 h = random.randint(20, 50)
-    #                 imarr = np.array(image)
-    #                 start_x, start_y = random.randint(0, cols - w), random.randint(0, rows - h)
-    #                 patch = imarr[start_y:start_y + h, start_x:start_x + w]
-    #                 x1, y1 = max(0, int(x - w / 2)), max(0, int(y - h / 2))
-    #                 patch = patch[:rows - y1, :cols - x1]
-    #                 patch = np.random.randint(0, 255, np.prod(patch.shape)).reshape(patch.shape).astype(np.uint8)
-    #                 image.paste(Image.fromarray(patch), (x1, y1))
-    #
-    #     if self._train:
-    #         jitter = tvt.ColorJitter(brightness=0.1, hue=0.1, contrast=0.5, saturation=0.5)
-    #         image = jitter(image)
-    #
-    #     image = tvf.to_tensor(image)
-    #     image = tvf.normalize(image, self.mean, self.std)
-    #
-    #     scoreboard = transforms.CoordsToBox()(scoreboard)
-    #     scoreboard = torch.from_numpy(scoreboard)
-    #     corners = transforms.place_gaussian(corners, 0.5, rows, cols, self.corners_grid_size)
-    #     scoreboard_idx, scoreboard = self.anchor_transform(scoreboard)
-    #
-    #     return image.numpy(), corners, scoreboard.numpy(), scoreboard_idx.numpy()
+
+@DatasetReader.register("tennis")
+class TennisDatasetReader(DatasetReader):
+
+    def __init__(self, transform: TennisTransform, lazy: bool = True):
+        super(TennisDatasetReader, self).__init__(lazy=lazy)
+        self.transform = transform
+
+    def _read(self, file_path: str) -> Iterable[Instance]:
+        """
+        Reads the instances from the given file_path and returns them as an
+        `Iterable` (which could be a list or could be a generator).
+        You are strongly encouraged to use a generator, so that users can
+        read a dataset in a lazy way, if they so choose.
+        """
+        with open(file_path, 'rb') as f:
+            images = json.load(f)
+        for image_file in images['annotations']:
+            img = Image.open(Path(image_file['path']) / image_file['name'])
+            sample = img.convert('RGB')
+            annos = image_file['annotations']
+            court_bbox = annos[0]['bbox'] if annos[0]['category'] == 'court' else annos[1]['bbox']
+            score_bbox = annos[0]['bbox'] if annos[0]['category'] == 'score' else annos[1]['bbox']
+            if np.any(court_bbox) and np.any(score_bbox):
+                sample, corners, scoreboard = self.transform(sample,
+                                                             np.array(court_bbox).reshape(4, 2),
+                                                             np.array(score_bbox).reshape(4, 2))
+                yield self.text_to_instance(sample, corners, scoreboard)
+
+    def text_to_instance(self, sample, court, score) -> Instance:
+        fields = {
+            'img': ArrayField(sample),
+            'court': ArrayField(court),
+            'score': ArrayField(score),
+        }
+        return Instance(fields)

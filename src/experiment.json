@@ -1,0 +1,54 @@
+{
+  "train_reader": {
+    "type": "tennis",
+    "transform": {
+      "type": "court_score",
+      "mean": [0.4306,0.4381,0.3884],
+      "std": [0.2100,0.1791,0.1697],
+      "size": [224, 224],
+      "train": true
+    },
+    "lazy": true
+  },
+  "valid_reader": {
+    "type": "tennis",
+    "transform": {
+      "type": "court_score",
+      "mean": [0.4306,0.4381,0.3884],
+      "std": [0.2100,0.1791,0.1697],
+      "size": [224, 224],
+      "train": false
+    },
+    "lazy": true
+  },
+  "model": {
+    "type": "anchor",
+    "stages": [
+      {
+        "type": "fpn"
+      },
+      {
+        "type": "court_head",
+        "in_channels": 128,
+        "out_channels": 6,
+      }
+    ],
+    "grid_sizes": [[56, 56]],
+    "box_sizes": [[50, 20]],
+    "im_size": [224, 224],
+    "angle_scale": 10
+  },
+  "optim": {
+    "type": "adam",
+    "lr": 1e-8,
+    "parameter_groups": [
+      [["backbone_0_[0-9]{1,2}"], {"initial_lr": 0.000006}],
+      [["backbone_1_[0-9]{1,2}"], {"initial_lr": 0.0000125}],
+      [["backbone_2_[0-9]{1,2}"], {"initial_lr": 0.000025}],
+      [["backbone_3_[0-9]{1,2}"], {"initial_lr": 0.00005}],
+      [["backbone_4_[0-9]{1,2}"], {"initial_lr": 0.0001}],
+      [["fpn[0-9]"], {"initial_lr": 1e-8}]
+    ]
+  }
+}
+

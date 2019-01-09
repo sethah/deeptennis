@@ -49,6 +49,17 @@ class Video(object):
         frames = sorted([f for f in folder.iterdir() if f.suffix == ext])
         return cls(frames, ext=ext)
 
+class Frame(object):
+
+    def __init__(self, path: Path):
+        self.path = path
+
+class ActionFrame(Frame):
+
+    def __init__(self, path: Path, court_coords: np.ndarray, score_coords: np.ndarray):
+        super().__init__(path)
+        self.court_coords = court_coords
+        self.score_coords = score_coords
 
 class ActionVideo(Video):
 

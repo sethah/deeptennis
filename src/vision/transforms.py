@@ -2,6 +2,7 @@ import numpy as np
 import itertools
 import cv2
 import numbers
+from typing import List, Tuple, NamedTuple
 
 from sklearn.metrics.pairwise import rbf_kernel
 
@@ -74,6 +75,98 @@ def box_to_coords(boxes: torch.Tensor):
     x2 = x + d * torch.cos(theta - phi)
     y2 = y - d * torch.sin(theta - phi)
     return torch.stack([x1, y1, x2, y2, x3, y3, x4, y4], dim=1).view(-1, 4, 2)
+
+
+class Point(NamedTuple):
+    x: float
+    y: float
+
+
+class BoundingBox(object):
+
+    def __init__(self, bottom_left: Point, bottom_right: Point, top_right: Point, top_left: Point):
+        self.bottom_left = bottom_left
+        self.bottom_right = bottom_right
+        self.top_right = top_right
+        self.top_left = top_left
+
+    def as_list(self):
+        return [
+            self.bottom_left.x, self.bottom_left.y,
+            self.bottom_right.x, self.bottom_right.y,
+            self.top_right.x, self.top_right.y,
+            self.top_left.x, self.top_left.y]
+
+    def as_box(self):
+        return self._coords_to_box(self.bottom_left, self.bottom_right,
+                                   self.top_left, self.top_right)
+
+
+    # @staticmethod
+    # def _order_points(p1: Point, p2: Point, p3: Point, p4: Point) -> \
+    #         Tuple[Point, Point, Point, Point]:
+    #     points = [p1, p2, p3, p4]
+    #     top_left = min(points, key=lambda x: tuple(x))
+    #     bottom_right = max(points, key=lambda x: tuple(x))
+    #     bottom_left = min(points, key=lambda x: (x[0], -x[1]))
+    #     top_right = max(points, key=lambda x: (x[0], -x[1]))
+    #     return bottom_left, bottom_right, top_right, top_left
+
+    @staticmethod
+    def _box_to_coords(
+                       x: float,
+                      y: float,
+                      w: float,
+                      h: float,
+                      theta: float = 0.0) -> List[Point]:
+        x = x + w / 2.
+        y = y + h / 2.
+        theta = theta * np.pi / 180.
+        phi = np.arctan(h / (w + 1e-8))
+        d = w / 2 / (np.cos(phi) + 1e-8)
+        x4 = float(x - d * np.cos(theta - phi))
+        y4 = float(y + d * np.sin(theta - phi))
+        x1 = float(x - d * np.cos(theta + phi))
+        y1 = float(y + d * np.sin(theta + phi))
+        x3 = float(x + d * np.cos(theta + phi))
+        y3 = float(y - d * np.sin(theta + phi))
+        x2 = float(x + d * np.cos(theta - phi))
+        y2 = float(y - d * np.sin(theta - phi))
+        return [Point(x1, y1), Point(x2, y2), Point(x3, y3), Point(x4, y4)]
+
+    def _coords_to_box(self, p1: Point, p2: Point, p3: Point, p4: Point) -> List[float]:
+        (x1, y1), (x2, y2), (x3, y3), (x4, y4) = p1, p2, p3, p4
+        theta = 0.0 if x2 == x1 else np.arctan((y1 - y2) / (x2 - x1))
+        w = np.sqrt((x1 - x2)**2 + (y1 - y2)**2)
+        h = np.sqrt((x1 - x4)**2 + (y1 - y4)**2)
+        phi = np.arctan(h / w)
+        d = w / 2 / np.cos(phi)
+        cx = x4 + d * np.cos(theta - phi)
+        cy = y4 - d * np.sin(theta - phi)
+        return [float(x) for x in [cx, cy, w, h, theta * 180. / np.pi]]
+
+    @classmethod
+    def from_coords(cls, coords: List[float]):
+        """
+        Create a bounding box from a flat list of (x, y) coordinates. Points must be ordered
+        counterclockwise, beginning with bottom left.
+        """
+        assert len(coords) == 8
+        coords = [float(x) for x in coords]
+        return cls(Point(*coords[:2]),
+                           Point(*coords[2:4]),
+                           Point(*coords[4:6]),
+                           Point(*coords[6:]))
+
+    @classmethod
+    def from_box(cls, points: List[float]):
+        """
+        Create a bounding box from a tuple (top_left_x, top_left_y, width, height, angle = 0).
+        """
+        assert len(points) in [4, 5]
+        return cls(*cls._box_to_coords(*points))
+
+
 
 class BoxToCoords(object):
 

@@ -74,4 +74,5 @@ class CourtScoreLoss(Model):
         score_loss = self.score_criterion((preds['score_class'], preds['score_offset']),
                                            (score_idx.to(device), score_coords.to(device)))
         court_loss = self.court_criterion(preds_weighted, targets_weighted)
-        return score_loss * self.score_weight + court_loss * self.court_weight
+        return {'score_loss': score_loss, 'court_loss': court_loss,
+                'loss': score_loss * self.score_weight + court_loss * self.court_weight}

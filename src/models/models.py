@@ -12,6 +12,8 @@ from src.vision.transforms import BoxToCoords, box_to_coords
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchvision.models as torch_models
+import src.utils as utils
 
 
 class KeypointModel(nn.Module):
@@ -261,7 +263,8 @@ class SamePad2d(nn.Module):
         return self.__class__.__name__
 
 
-class FPN(nn.Module):
+@Model.register("fpn")
+class FPN(Model):
     """
     A feature pyramid network.
 
@@ -271,19 +274,25 @@ class FPN(nn.Module):
 
     Reference: https://arxiv.org/abs/1612.03144
     """
+    # def __init__(self,
+    #              C1: nn.Module,
+    #              C2: nn.Module,
+    #              C3: nn.Module,
+    #              C4: nn.Module,
+    #              C5: nn.Module,
+    #              out_channels: int = 128):
     def __init__(self,
-                 C1: nn.Module,
-                 C2: nn.Module,
-                 C3: nn.Module,
-                 C4: nn.Module,
-                 C5: nn.Module,
                  out_channels: int = 128):
-        super(FPN, self).__init__()
+        super(FPN, self).__init__(None)
+        res = torch_models.resnet34(pretrained=True)
+        utils.freeze(res.parameters())
+
+        C1 = nn.Sequential(res.conv1, res.bn1, res.relu, res.maxpool)
         self.C1 = C1
-        self.C2 = C2
-        self.C3 = C3
-        self.C4 = C4
-        self.C5 = C5
+        self.C2 = res.layer1
+        self.C3 = res.layer2
+        self.C4 = res.layer3
+        self.C5 = res.layer4
         self.out_channels = out_channels
         self.P6 = nn.MaxPool2d(kernel_size=1, stride=2)
         self.P5_conv1 = nn.Conv2d(512, self.out_channels, kernel_size=1, stride=1)
@@ -335,7 +344,8 @@ class FPN(nn.Module):
         return [p2_out, p3_out, p4_out, p5_out]
 
 
-class CourtScoreHead(nn.Module):
+@Model.register("court_head")
+class CourtScoreHead(Model):
     """
     A prediction head that can be stacked on a feature pyramid. This head
     outputs heatmaps for each court vertex as well as SSD predictions for the
@@ -350,7 +360,7 @@ class CourtScoreHead(nn.Module):
                       largest to smallest and should be in increasing powers of two. For example,
                       `nmaps = 4` could have 4 feature maps of sizes [7x7, 14x14, 28x28, 56x56].
         """
-        super(CourtScoreHead, self).__init__()
+        super(CourtScoreHead, self).__init__(None)
 
         k = 64  # TODO: make configurable
         self.court_convs = nn.ModuleList([DoubleConv(in_channels, k) for _ in range(nmaps)])
@@ -366,7 +376,7 @@ class CourtScoreHead(nn.Module):
         out = self.conv1(out)
         out_score = self.out_conv_score(out)
         out_score_class = out_score[:, 0, :, :]
-        out_score_reg = out_score[:, 1:, :, :]
+        out_score_reg = torch.tanh(out_score[:, 1:, :, :])
         return {
             "court": self.out_conv_court(out),
             "score_class": out_score_class,
@@ -374,16 +384,17 @@ class CourtScoreHead(nn.Module):
         }
 
 
+@Model.register("anchor")
 class AnchorBoxModel(Model):
     """
     A model that wraps an SSD model, but holds anchor box data as parameters. These
     parameters are saved along with the model and can be used at inference time.
     """
 
-    def __init__(self, stages: List[nn.Module],
-                        grid_sizes: List[Tuple[int, int]],
-                        box_sizes: List[Tuple[int, int]],
-                        im_size: Tuple[int, int],
+    def __init__(self, stages: List[Model],
+                        grid_sizes: List[List[int]],
+                        box_sizes: List[List[int]],
+                        im_size: List[int],
                         angle_scale: int):
         super(AnchorBoxModel, self).__init__(Vocabulary())
         self.model = nn.Sequential(*stages)
@@ -396,7 +407,8 @@ class AnchorBoxModel(Model):
         class_crit = nn.BCEWithLogitsLoss()
         reg_crit = nn.L1Loss()
         ssd_crit = SSDLoss(class_crit, reg_crit)
-        self.criterion = CourtScoreLoss(court_crit, ssd_crit, court_weight=50., score_weight=1.)
+        self.criterion = CourtScoreLoss(court_crit, ssd_crit, court_weight=25., score_weight=1.)
+        self._metrics = {}
 
     def forward(self,
                 img: torch.Tensor,
@@ -407,9 +419,14 @@ class AnchorBoxModel(Model):
             score_class = AnchorBoxModel.get_best(self.boxes, score)
             score_offset = (score - self.boxes[score_class]) / self.offsets[score_class]
             labels = {'court': court, 'score_offset': score_offset, 'score_class': score_class}
-            loss = self.criterion(out, labels)
-            out['loss'] = loss
+            loss_dict = self.criterion(out, labels)
+            self._metrics = {f'model_{k}': v.item() for k, v in loss_dict.items()}
+            out['loss'] = loss_dict['loss']
         return out
+
+    @overrides
+    def get_metrics(self, reset: bool = False):
+        return self._metrics
 
     @overrides
     def decode(self, output_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
