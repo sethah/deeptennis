@@ -1,4 +1,5 @@
 {
+  "batch_size": 16,
   "train_reader": {
     "type": "tennis",
     "transform": {
@@ -25,12 +26,14 @@
     "type": "anchor",
     "stages": [
       {
-        "type": "fpn"
+        "type": "fpn",
+        "backbone": {
+          "freeze": false
+        }
       },
       {
         "type": "court_head",
         "in_channels": 128,
-        "out_channels": 6,
       }
     ],
     "grid_sizes": [[56, 56]],
@@ -40,14 +43,13 @@
   },
   "optim": {
     "type": "adam",
-    "lr": 1e-8,
+    "lr": 1e-3,
     "parameter_groups": [
-      [["backbone_0_[0-9]{1,2}"], {"initial_lr": 0.000006}],
-      [["backbone_1_[0-9]{1,2}"], {"initial_lr": 0.0000125}],
-      [["backbone_2_[0-9]{1,2}"], {"initial_lr": 0.000025}],
-      [["backbone_3_[0-9]{1,2}"], {"initial_lr": 0.00005}],
-      [["backbone_4_[0-9]{1,2}"], {"initial_lr": 0.0001}],
-      [["fpn[0-9]"], {"initial_lr": 1e-8}]
+      [[".*backbone\\.stages\\.0.*"], {"initial_lr": 0.000006}],
+      [[".*backbone\\.stages\\.1.*"], {"initial_lr": 0.0000125}],
+      [[".*backbone\\.stages\\.2.*"], {"initial_lr": 0.000025}],
+      [[".*backbone\\.stages\\.3.*"], {"initial_lr": 0.00005}],
+      [["(model\\.1.*)|(model\\.0\\.upsample.*)"], {"initial_lr": 1e-3}]
     ]
   }
 }

@@ -263,6 +263,37 @@ class SamePad2d(nn.Module):
         return self.__class__.__name__
 
 
+@Model.register("backbone")
+class BackboneModel(Model):
+
+    def __init__(self, freeze: bool = True):
+        super(BackboneModel, self).__init__(None)
+        base = torch_models.resnet34(pretrained=True)
+        self.stages = nn.ModuleList()
+        self.stages.append(nn.Sequential(base.conv1, base.bn1, base.relu, base.maxpool, base.layer1))
+        self.stages.append(base.layer2)
+        self.stages.append(base.layer3)
+        self.stages.append(base.layer4)
+        for p in self.parameters():
+            p.requires_grad = not freeze
+
+    def get_channels(self) -> List[int]:
+        im = torch.randn(1, 3, 224, 224)
+        channels = []
+        out = im
+        for stage in self.stages:
+            out = stage.forward(out)
+            channels.append(out.shape[1])
+        return channels
+
+    def param_groups(self) -> List[Tuple[str, nn.Parameter]]:
+        _params = []
+        for j, stage in enumerate(self.stages):
+            for i, p in enumerate(stage.parameters()):
+                _params.append((f'backbone_{j}_{i}', p))
+        return _params
+
+
 @Model.register("fpn")
 class FPN(Model):
     """
@@ -274,47 +305,29 @@ class FPN(Model):
 
     Reference: https://arxiv.org/abs/1612.03144
     """
-    # def __init__(self,
-    #              C1: nn.Module,
-    #              C2: nn.Module,
-    #              C3: nn.Module,
-    #              C4: nn.Module,
-    #              C5: nn.Module,
-    #              out_channels: int = 128):
     def __init__(self,
+                 backbone: BackboneModel,
                  out_channels: int = 128):
         super(FPN, self).__init__(None)
-        res = torch_models.resnet34(pretrained=True)
-        utils.freeze(res.parameters())
-
-        C1 = nn.Sequential(res.conv1, res.bn1, res.relu, res.maxpool)
-        self.C1 = C1
-        self.C2 = res.layer1
-        self.C3 = res.layer2
-        self.C4 = res.layer3
-        self.C5 = res.layer4
+        # res = torch_models.resnet34(pretrained=True)
+        # utils.freeze(res.parameters())
+        #
+        # C1 = nn.Sequential(res.conv1, res.bn1, res.relu, res.maxpool)
+        # self.C1 = C1
+        # self.C2 = res.layer1
+        # self.C3 = res.layer2
+        # self.C4 = res.layer3
+        # self.C5 = res.layer4
+        self.backbone: Model = backbone
         self.out_channels = out_channels
-        self.P6 = nn.MaxPool2d(kernel_size=1, stride=2)
-        self.P5_conv1 = nn.Conv2d(512, self.out_channels, kernel_size=1, stride=1)
-        self.P5_conv2 = nn.Sequential(
-            SamePad2d(kernel_size=3, stride=1),
-            nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1),
-        )
-        self.P4_conv1 = nn.Conv2d(256, self.out_channels, kernel_size=1, stride=1)
-        self.P4_conv2 = nn.Sequential(
-            SamePad2d(kernel_size=3, stride=1),
-            nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1),
-        )
-        self.P3_conv1 = nn.Conv2d(128, self.out_channels, kernel_size=1, stride=1)
-        self.P3_conv2 = nn.Sequential(
-            SamePad2d(kernel_size=3, stride=1),
-            nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1),
-        )
-        self.P2_conv1 = nn.Conv2d(64, self.out_channels, kernel_size=1, stride=1)
-        self.P2_conv2 = nn.Sequential(
-            SamePad2d(kernel_size=3, stride=1),
-            nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1),
-        )
+        self.upsample = nn.ModuleDict()
+
+        for i, n_channels in enumerate(self.backbone.get_channels()):
+            self.upsample[f'P{i}_conv1'] = nn.Conv2d(n_channels, self.out_channels,
+                                                       kernel_size=1, stride=1)
+            self.upsample[f'P{i}_conv2']  = nn.Sequential(
+                SamePad2d(kernel_size=3, stride=1),
+                nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1))
 
     def get_grid_sizes(self, im_h, im_w):
         x = torch.randn(1, 3, im_h, im_w)
@@ -322,26 +335,21 @@ class FPN(Model):
         return [tuple(o.shape[-2:]) for o in out]
 
     def forward(self, x):
-        x = self.C1(x)
-        x = self.C2(x)
-        c2_out = x
-        x = self.C3(x)
-        c3_out = x
-        x = self.C4(x)
-        c4_out = x
-        x = self.C5(x)
+        outputs = []
+        out = x
+        for stage in self.backbone.stages:
+            out = stage(out)
+            outputs.append(out)
 
-        p5_out = self.P5_conv1(x)
-        p4_out = self.P4_conv1(c4_out) + F.interpolate(p5_out, scale_factor=2)
-        p3_out = self.P3_conv1(c3_out) + F.interpolate(p4_out, scale_factor=2)
-        p2_out = self.P2_conv1(c2_out) + F.interpolate(p3_out, scale_factor=2)
+        n = len(self.backbone.stages)
+        pouts = [self.upsample[f'P{n - 1}_conv1'](outputs[-1])]
+        out = pouts[-1]
+        for i in range(n - 2, -1, -1):
+            out = self.upsample[f'P{i}_conv1'](outputs[i]) + F.interpolate(out, scale_factor=2)
+            pouts.append(out)
+        pouts = [self.upsample[f'P{n - 1 - i}_conv2'](p) for i, p in enumerate(pouts)]
 
-        p5_out = self.P5_conv2(p5_out)
-        p4_out = self.P4_conv2(p4_out)
-        p3_out = self.P3_conv2(p3_out)
-        p2_out = self.P2_conv2(p2_out)
-
-        return [p2_out, p3_out, p4_out, p5_out]
+        return list(reversed(pouts))
 
 
 @Model.register("court_head")
@@ -352,21 +360,26 @@ class CourtScoreHead(Model):
     scoreboard location and size.
     """
 
-    def __init__(self, in_channels, out_channels, nmaps: int = 4):
+    def __init__(self, in_channels: int, feature_channels: int = 64, nmaps: int = 4):
         """
         :param in_channels: input channels for each feature map.
-        :param out_channels: the number of output channels for the score prediction.
+        :param feature_channels: number of intermediate channels before output predictions
         :param nmaps: the number of different sized feature maps. These maps should be ordered
                       largest to smallest and should be in increasing powers of two. For example,
-                      `nmaps = 4` could have 4 feature maps of sizes [7x7, 14x14, 28x28, 56x56].
+                      `nmaps = 4` could have 4 feature maps of sizes [56x56, 28x28, 14x14, 7x7].
         """
         super(CourtScoreHead, self).__init__(None)
 
-        k = 64  # TODO: make configurable
-        self.court_convs = nn.ModuleList([DoubleConv(in_channels, k) for _ in range(nmaps)])
-        self.conv1 = StdConv(k * nmaps, k, drop=0.4)
-        self.out_conv_court = nn.Conv2d(k, 4, 3, padding=1)
-        self.out_conv_score = nn.Conv2d(k, out_channels, 3, padding=1)
+        court_keypoints = 4
+        score_regression_channels = 5
+        score_location_channels = 1
+        self.court_convs = nn.ModuleList([DoubleConv(in_channels, feature_channels)
+                                          for _ in range(nmaps)])
+        self.conv1 = StdConv(feature_channels * nmaps, feature_channels, drop=0.4)
+        self.out_conv_court = nn.Conv2d(feature_channels, court_keypoints, kernel_size=3, padding=1)
+        self.out_conv_score = nn.Conv2d(feature_channels,
+                                        score_location_channels + score_regression_channels,
+                                        kernel_size=3, padding=1)
 
     def forward(self, feature_maps):
         out = [layer.forward(feature_map) for layer, feature_map in
@@ -490,3 +503,4 @@ class AnchorBoxModel(Model):
         """
         diff = label_boxes[:, :2].unsqueeze(1) - boxes[:, :2]
         return torch.pow(diff, 2).sum(dim=2).argmin(dim=1)
+

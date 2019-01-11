@@ -101,17 +101,6 @@ class BoundingBox(object):
         return self._coords_to_box(self.bottom_left, self.bottom_right,
                                    self.top_left, self.top_right)
 
-
-    # @staticmethod
-    # def _order_points(p1: Point, p2: Point, p3: Point, p4: Point) -> \
-    #         Tuple[Point, Point, Point, Point]:
-    #     points = [p1, p2, p3, p4]
-    #     top_left = min(points, key=lambda x: tuple(x))
-    #     bottom_right = max(points, key=lambda x: tuple(x))
-    #     bottom_left = min(points, key=lambda x: (x[0], -x[1]))
-    #     top_right = max(points, key=lambda x: (x[0], -x[1]))
-    #     return bottom_left, bottom_right, top_right, top_left
-
     @staticmethod
     def _box_to_coords(
                        x: float,
@@ -134,7 +123,8 @@ class BoundingBox(object):
         y2 = float(y - d * np.sin(theta - phi))
         return [Point(x1, y1), Point(x2, y2), Point(x3, y3), Point(x4, y4)]
 
-    def _coords_to_box(self, p1: Point, p2: Point, p3: Point, p4: Point) -> List[float]:
+    @staticmethod
+    def _coords_to_box(p1: Point, p2: Point, p3: Point, p4: Point) -> List[float]:
         (x1, y1), (x2, y2), (x3, y3), (x4, y4) = p1, p2, p3, p4
         theta = 0.0 if x2 == x1 else np.arctan((y1 - y2) / (x2 - x1))
         w = np.sqrt((x1 - x2)**2 + (y1 - y2)**2)
