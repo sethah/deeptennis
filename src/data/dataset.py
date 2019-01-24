@@ -82,12 +82,14 @@ class CourtAndScoreTransform(TennisTransform):
                  std: List[float],
                  size: Tuple[int, int] = (224, 224),
                  corners_grid_size: Tuple[int] = (56, 56),
+                 mask_prob: float = 0.5,
                  train: bool = True):
         self.mean = mean
         self.std = std
         self._train = train
         self.size = size
         self.corners_grid_size = corners_grid_size
+        self.mask_prob = mask_prob
 
     def __call__(self,
                  image: Image.Image,
@@ -132,19 +134,20 @@ class CourtAndScoreTransform(TennisTransform):
 
         # add random pixel patches to the court corners
         if self._train:
-            for (x, y) in corners:
-                p = random.random()
-                if p < 0.4:
-                    w = random.randint(20, 50)
-                    h = random.randint(20, 50)
-                    imarr = np.array(image)
-                    start_x, start_y = random.randint(0, cols - w), random.randint(0, rows - h)
-                    patch = imarr[start_y:start_y + h, start_x:start_x + w]
-                    x1, y1 = max(0, int(x - w / 2)), max(0, int(y - h / 2))
-                    patch = patch[:rows - y1, :cols - x1]
-                    patch = np.random.randint(0, 255, np.prod(patch.shape)).reshape(
-                        patch.shape).astype(np.uint8)
-                    image.paste(Image.fromarray(patch), (x1, y1))
+            p = random.random()
+            if p < self.mask_prob:
+                w = random.randint(20, 80)
+                h = random.randint(20, 80)
+                imarr = np.array(image)
+                # propose a starting point until the patch will fit within the image
+                while True:
+                    x1, y1 = random.randint(0, imarr.shape[1]), random.randint(0,
+                                                                               imarr.shape[0])
+                    if x1 + w < imarr.shape[1] and y1 + h < imarr.shape[0]:
+                        break
+                patch = np.random.randint(0, 255, np.prod((w, h))).reshape(
+                    (w, h)).astype(np.uint8)
+                image.paste(Image.fromarray(patch), (x1, y1))
 
         if self._train:
             jitter = tvt.ColorJitter(brightness=0.1, hue=0.1, contrast=0.5, saturation=0.5)
@@ -189,7 +192,7 @@ class ImagePathsDataset(torch.utils.data.Dataset):
 @DatasetReader.register("tennis")
 class TennisDatasetReader(DatasetReader):
 
-    def __init__(self, transform: TennisTransform, lazy: bool = True):
+    def __init__(self, transform: TennisTransform = None, lazy: bool = True):
         super(TennisDatasetReader, self).__init__(lazy=lazy)
         self.transform = transform
 
@@ -209,10 +212,13 @@ class TennisDatasetReader(DatasetReader):
             court_bbox = annos[0]['bbox'] if annos[0]['category'] == 'court' else annos[1]['bbox']
             score_bbox = annos[0]['bbox'] if annos[0]['category'] == 'score' else annos[1]['bbox']
             if np.any(court_bbox) and np.any(score_bbox):
-                sample, corners, scoreboard = self.transform(sample,
-                                                             np.array(court_bbox).reshape(4, 2),
-                                                             np.array(score_bbox).reshape(4, 2))
-                yield self.text_to_instance(sample, corners, scoreboard)
+                court = court_bbox
+                score = score_bbox
+                if self.transform is not None:
+                    sample, court, score = self.transform(sample,
+                                                          np.array(court).reshape(4, 2),
+                                                          np.array(score).reshape(4, 2))
+                yield self.text_to_instance(sample, court, score)
 
     def text_to_instance(self, sample, court, score) -> Instance:
         fields = {

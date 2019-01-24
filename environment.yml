@@ -29,4 +29,7 @@ dependencies:
   - allennlp
   - augmentor
   - albumentations
+  - lime
+  - shap
+  - umap
   - -e .

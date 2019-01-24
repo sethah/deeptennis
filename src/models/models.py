@@ -309,23 +309,15 @@ class FPN(Model):
                  backbone: BackboneModel,
                  out_channels: int = 128):
         super(FPN, self).__init__(None)
-        # res = torch_models.resnet34(pretrained=True)
-        # utils.freeze(res.parameters())
-        #
-        # C1 = nn.Sequential(res.conv1, res.bn1, res.relu, res.maxpool)
-        # self.C1 = C1
-        # self.C2 = res.layer1
-        # self.C3 = res.layer2
-        # self.C4 = res.layer3
-        # self.C5 = res.layer4
         self.backbone: Model = backbone
         self.out_channels = out_channels
         self.upsample = nn.ModuleDict()
 
         for i, n_channels in enumerate(self.backbone.get_channels()):
-            self.upsample[f'P{i}_conv1'] = nn.Conv2d(n_channels, self.out_channels,
-                                                       kernel_size=1, stride=1)
-            self.upsample[f'P{i}_conv2']  = nn.Sequential(
+            self.upsample[f'P{i}_conv1'] = StdConv(n_channels, self.out_channels,
+                                                       kernel_size=1, stride=1, drop=0.4,
+                                                   padding=0)
+            self.upsample[f'P{i}_conv2'] = nn.Sequential(
                 SamePad2d(kernel_size=3, stride=1),
                 nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1))
 
@@ -453,7 +445,8 @@ class AnchorBoxModel(Model):
         box_idxs = torch.argmax(class_score.view(b, -1), dim=1)
         reg_score = reg_score.view(b, 5, -1)[torch.arange(b), :, box_idxs]
         reg_score = reg_score * self.offsets[box_idxs] + self.boxes[box_idxs]
-        return {'court': court, 'score': reg_score}
+        out = {'court': court, 'score': reg_score}
+        return out
 
     def heatmaps_to_vertices(self, heatmaps: torch.Tensor, width: int, height: int) -> torch.Tensor:
         hmaps = heatmaps.detach().numpy()
