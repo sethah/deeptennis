@@ -27,6 +27,14 @@ requirements: test_environment
 	pip install -U pip setuptools wheel
 	pip install -r requirements.txt
 
+## Run tests
+RUNTEST=python -m unittest -v -b
+
+ALLMODULES=$(wildcard src/test/test_*.py)
+
+test_all:
+	${RUNTEST} ${ALLMODULES}
+
 ## Make Dataset
 data: requirements
 	$(PYTHON_INTERPRETER) src/data/make_dataset.py
@@ -39,6 +47,14 @@ $(DATA_DIR)/interim/scoreboard/%.pkl: $(DATA_DIR)/processed/frames/%
 	--save-path $@ \
 	--frames-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \
 	--meta-file $(PROJECT_DIR)/src/match_meta.json
+
+score_mask_extract: $(addprefix $(DATA_DIR)/interim/score_mask/, $(basename $(notdir $(ALL_VIDEOS))))
+$(DATA_DIR)/interim/score_mask/%: $(DATA_DIR)/processed/frames/%
+	python src/features/extract_scoreboard.py \
+	--save-path $@ \
+	--frames-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \
+	--meta-file $(PROJECT_DIR)/src/match_meta.json \
+	--segmentation 1
 
 court_extract: $(addprefix $(DATA_DIR)/interim/court/, $(addsuffix .pkl, $(basename $(notdir $(ALL_VIDEOS)))))
 $(DATA_DIR)/interim/court/%.pkl: $(DATA_DIR)/interim/action_mask/%.npy

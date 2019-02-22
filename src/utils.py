@@ -3,12 +3,15 @@ import itertools
 import numpy as np
 import pandas as pd
 from pathlib import Path
+import cv2
 from PIL import Image
-from typing import Iterable
+from typing import Iterable, Tuple
 
 import torch
 import torch.utils.data as data
 import torchvision.transforms as tvt
+
+from src.vision.transforms import BoundingBox
 
 
 def image_norm(image_iter):
@@ -26,6 +29,35 @@ def to_img_np(torch_img):
         return np_img.transpose(1, 2, 0)
     else:
         return np_img
+
+
+def _IOU(boxes1: torch.Tensor, boxes2: torch.Tensor, im_size: Tuple[int, int]) -> torch.Tensor:
+    """
+    :param boxes1: (batch x 4)
+    :param boxes2: (batch x 4)
+    :return:
+    (batch x 4) -> (batch x 224 x 224
+    """
+    boxes1 = boxes1.cpu().detach().numpy()
+    boxes2 = boxes2.cpu().detach().numpy()
+    scores = []
+    for i, (b1, b2) in enumerate(zip(boxes1, boxes2)):
+        img1 = np.zeros(im_size, np.uint8)
+        img2 = np.zeros(im_size, np.uint8)
+        bbox1 = BoundingBox.from_box(b1.tolist())
+        bbox2 = BoundingBox.from_box(b2.tolist())
+        points1 = bbox1.as_list()
+        points2 = bbox2.as_list()
+        # print(points1, points2)
+        a = np.array(points1).reshape(4, 2)
+        # print(a)
+        img1 = cv2.fillConvexPoly(img1, np.array(points1).reshape(4, 2).astype(np.int64), 255)
+        img2 = cv2.fillConvexPoly(img2, np.array(points2).reshape(4, 2).astype(np.int64), 255)
+        intersection = np.logical_and(img1, img2)
+        union = np.logical_or(img1, img2)
+        iou_score = np.sum(intersection) / np.sum(union)
+        scores.append(iou_score)
+    return torch.tensor(scores)
 
 
 def get_trapezoid(x2, y2, x3, y3, x4, y4):

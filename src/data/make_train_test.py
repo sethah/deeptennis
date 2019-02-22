@@ -14,6 +14,7 @@ class Annotation(NamedTuple):
     category: str
     bbox: List[float]
 
+
 def get_video_boxes(video: Video,
                     court_boxes: Dict[str, BoundingBox],
                     score_boxes: Dict[str, BoundingBox]) -> Iterable[Dict[str, Any]]:
@@ -42,6 +43,7 @@ if __name__ == "__main__":
     parser.add_argument("--action-path", type=str)
     parser.add_argument("--test-frac", type=float, default=0.2)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--segmentation", type=int, default=0)
 
     args = parser.parse_args()
 
@@ -61,16 +63,31 @@ if __name__ == "__main__":
     valid_videos = all_vids[:nvalid]
 
     images = {'train': [], 'test': []}
-    for vid in all_vids:
-        phase = 'train' if vid in train_videos else 'test'
-        action_mask = np.load(action_path / (vid.name + ".npy"))
-        with open(score_path / (vid.name + ".pkl"), 'rb') as f:
-            scores = [(fname, BoundingBox.from_box(box)) for i, (fname, box) in enumerate(pickle.load(f)) if action_mask[i]]
-        with open(court_path / (vid.name + ".pkl"), 'rb') as f:
-            courts = [(fname, BoundingBox.from_coords(coords + [0.0] * (8 - len(coords))))
-                      for i, (fname, coords) in enumerate(pickle.load(f)) if action_mask[i]]
-        for anno in get_video_boxes(vid, dict(courts), dict(scores)):
-            images[phase].append(anno)
+    if args.segmentation:
+        for vid in all_vids:
+            phase = 'train' if vid in train_videos else 'test'
+            action_mask = np.load(action_path / (vid.name + ".npy"))
+            annos = []
+            for i, mask_path in enumerate((score_path / vid.name).iterdir()):
+                if not action_mask[i]:
+                    continue
+                anno = {'name': mask_path.with_suffix(".jpg").name,
+                              'path': vid.uri,
+                              'mask_name': mask_path.name,
+                              'mask_path': mask_path.parent}
+                images[phase].append({k: str(v) for k, v in anno.items()})
+
+    else:
+        for vid in all_vids:
+            phase = 'train' if vid in train_videos else 'test'
+            action_mask = np.load(action_path / (vid.name + ".npy"))
+            with open(score_path / (vid.name + ".pkl"), 'rb') as f:
+                scores = [(fname, BoundingBox.from_box(box)) for i, (fname, box) in enumerate(pickle.load(f)) if action_mask[i]]
+            with open(court_path / (vid.name + ".pkl"), 'rb') as f:
+                courts = [(fname, BoundingBox.from_coords(coords + [0.0] * (8 - len(coords))))
+                          for i, (fname, coords) in enumerate(pickle.load(f)) if action_mask[i]]
+            for anno in get_video_boxes(vid, dict(courts), dict(scores)):
+                images[phase].append(anno)
     save_path.mkdir(exist_ok=True)
     for phase in {'train', 'test'}:
         with open(save_path / Path(phase).with_suffix(".json"), 'w') as f:

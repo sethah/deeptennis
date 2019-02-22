@@ -107,12 +107,14 @@ class BoundingBox(object):
                       y: float,
                       w: float,
                       h: float,
-                      theta: float = 0.0) -> List[Point]:
-        x = x + w / 2.
-        y = y + h / 2.
+                      theta: float = 0.0,
+                      centered: bool = False) -> List[Point]:
         theta = theta * np.pi / 180.
         phi = np.arctan(h / (w + 1e-8))
         d = w / 2 / (np.cos(phi) + 1e-8)
+        if not centered:
+            x = x + d * np.cos(theta - phi)
+            y = y - d * np.sin(theta - phi)
         x4 = float(x - d * np.cos(theta - phi))
         y4 = float(y + d * np.sin(theta - phi))
         x1 = float(x - d * np.cos(theta + phi))
@@ -149,12 +151,12 @@ class BoundingBox(object):
                            Point(*coords[6:]))
 
     @classmethod
-    def from_box(cls, points: List[float]):
+    def from_box(cls, points: List[float], centered: bool = False):
         """
         Create a bounding box from a tuple (top_left_x, top_left_y, width, height, angle = 0).
         """
         assert len(points) in [4, 5]
-        return cls(*cls._box_to_coords(*points))
+        return cls(*cls._box_to_coords(*points, centered))
 
 
 

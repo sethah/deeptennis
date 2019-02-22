@@ -2,7 +2,9 @@ local mean = [0.4306,0.4381,0.3884];
 local std = [0.2100,0.1791,0.1697];
 local im_size = [224, 224];
 {
+  "seed": 42,
   "batch_size": 16,
+  "epochs": 12,
   "train_reader": {
     "type": "tennis",
     "transform": {

@@ -5,15 +5,11 @@ import argparse
 from pathlib import Path
 import logging
 from logging.config import fileConfig
-import scipy.signal as sig
 import cv2
-from tqdm import tqdm
-import itertools
 import pickle
 
-import csv
 
-from src import utils
+from src.vision.transforms import BoundingBox
 
 
 def dilate_image(image, thresh_low=180):
@@ -46,6 +42,7 @@ if __name__ == "__main__":
     parser.add_argument("--save-path", type=str, default=None)
     parser.add_argument("--meta-file", type=str, default=None)
     parser.add_argument("--outline-threshold", type=int, default=150)
+    parser.add_argument("--segmentation", type=int, default=0)
 
     args = parser.parse_args()
     fileConfig('logging_config.ini')
@@ -71,8 +68,10 @@ if __name__ == "__main__":
     min_score_width = match_meta['min_score_width']
     logging.debug(f"Begin bounding box detection for {match_name}")
     score_boxes = []
+    im_sizes = []
     for frame in frame_list:
         img = cv2.imread(str(frame))
+        im_sizes.append(img.shape)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = img[y:y + h, x:x + w].astype(np.int32)
         img = 255 - img if invert else img
@@ -84,6 +83,16 @@ if __name__ == "__main__":
         else:
             score_boxes.append([x, y, score_width, h])
 
-    save_list = list(zip([f.name for f in frame_list], score_boxes))
-    with open(save_path, 'wb') as save_file:
-        pickle.dump(save_list, save_file)
+    if args.segmentation:
+        if not save_path.exists():
+            save_path.mkdir(parents=True)
+        for i, (imsize, box) in enumerate(zip(im_sizes, score_boxes)):
+            mask = np.zeros((imsize[0], imsize[1]), dtype=np.uint8)
+            bbox = BoundingBox.from_box(box)
+            mask = cv2.fillConvexPoly(mask, np.array(bbox.as_list(), dtype=np.int64).reshape(4, 2), 1)
+            filename = (save_path / frame_list[i].name).with_suffix(".png")
+            cv2.imwrite(str(filename), mask)
+    else:
+        save_list = list(zip([f.name for f in frame_list], score_boxes))
+        with open(save_path, 'wb') as save_file:
+            pickle.dump(save_list, save_file)

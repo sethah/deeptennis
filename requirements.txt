@@ -2,7 +2,7 @@ matplotlib
 numpy
 pandas
 scipy
-pytorch=0.4.1
+pytorch==0.4.1
 torchvision
 cookiecutter
 opencv

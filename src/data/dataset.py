@@ -15,6 +15,9 @@ import torch
 import torchvision.transforms as tvt
 import torchvision.transforms.functional as tvf
 
+import albumentations as aug
+from albumentations.core.transforms_interface import ImageOnlyTransform
+
 import src.vision.transforms as transforms
 
 
@@ -68,11 +71,61 @@ class ImageFilesDataset(torch.utils.data.Dataset):
         _ds = self.with_transforms(std_transforms)
         return compute_mean_std(_ds)
 
+class AugmentationWrapper(Registrable):
+
+    def __call__(self, image: np.ndarray, mask: np.ndarray):
+        raise NotImplementedError
+
+
+class SwapChannels(ImageOnlyTransform):
+
+    def __init__(self, always_apply=False, p=1.0):
+        super(SwapChannels, self).__init__(always_apply, p)
+
+    def apply(self, img, **params):
+        return img.transpose(2, 0, 1)
+
+
+@AugmentationWrapper.register("score_augmentor")
+class TennisAugmentor(AugmentationWrapper):
+
+    def __init__(self,
+                 mean: List[float],
+                 std: List[float],
+                 size: Tuple[int, int] = (224, 224),
+                 channel_prob: float = 0.5,
+                 flip_prob: float = 0.5,
+                 train: bool = True):
+        self.mean = mean
+        self.std = std
+        self.size = size
+        self._train = train
+        if self._train:
+            self.aug = aug.Compose([
+                aug.Resize(self.size[0], self.size[1], always_apply=True),
+                aug.Normalize(mean=self.mean, std=self.std),
+                aug.HorizontalFlip(p=flip_prob),
+                aug.Rotate(always_apply=True, limit=30),
+                aug.ChannelShuffle(p=channel_prob),
+                SwapChannels(always_apply=True)
+            ])
+        else:
+            self.aug = aug.Compose([
+                aug.Resize(self.size[0], self.size[1], always_apply=True),
+                aug.Normalize(mean=self.mean, std=self.std),
+                SwapChannels(always_apply=True)
+            ])
+
+
+    def __call__(self, image: np.ndarray, mask: np.ndarray):
+        return self.aug(image=image, mask=mask)
+
 
 class TennisTransform(Registrable):
 
     def __call__(self, *args, **kwargs):
         raise NotImplementedError
+
 
 @TennisTransform.register("court_score")
 class CourtAndScoreTransform(TennisTransform):
@@ -223,7 +276,50 @@ class TennisDatasetReader(DatasetReader):
     def text_to_instance(self, sample, court, score) -> Instance:
         fields = {
             'img': ArrayField(sample),
-            'court': ArrayField(court),
-            'score': ArrayField(score),
+            # 'court': ArrayField(court),
+            'labels': ArrayField(score),
+        }
+        return Instance(fields)
+
+@DatasetReader.register("score")
+class TennisScoreDatasetReader(DatasetReader):
+
+    def __init__(self, transform: AugmentationWrapper = None, lazy: bool = True):
+        super(TennisScoreDatasetReader, self).__init__(lazy=lazy)
+        self.transform = transform
+
+    def _read(self, file_path: str) -> Iterable[Instance]:
+        """
+        Reads the instances from the given file_path and returns them as an
+        `Iterable` (which could be a list or could be a generator).
+        You are strongly encouraged to use a generator, so that users can
+        read a dataset in a lazy way, if they so choose.
+        """
+        with open(file_path, 'rb') as f:
+            images = json.load(f)
+        for image_file in images['annotations']:
+            img = Image.open(Path(image_file['path']) / image_file['name'])
+            mask = Image.open(Path(image_file['mask_path']) / image_file['mask_name'])
+            mask = np.array(mask)
+            sample = img.convert('RGB')
+            if self.transform is not None:
+                ret = self.transform(image=np.array(sample), mask=mask)
+
+                sample = ret['image']
+                mask = ret['mask']
+            else:
+                sample = np.array(sample)
+            yield self.text_to_instance(sample, mask)
+            # annos = image_file['annotations']
+            # court_bbox = annos[0]['bbox'] if annos[0]['category'] == 'court' else annos[1]['bbox']
+            # score_bbox = annos[0]['bbox'] if annos[0]['category'] == 'score' else annos[1]['bbox']
+            # if np.any(court_bbox) and np.any(score_bbox):
+            #     court = court_bbox
+            #     score = score_bbox
+
+    def text_to_instance(self, sample: np.ndarray, mask: np.ndarray) -> Instance:
+        fields = {
+            'img': ArrayField(sample),
+            'mask': ArrayField(mask)
         }
         return Instance(fields)
