@@ -7,38 +7,50 @@ from allennlp.data import Vocabulary
 from allennlp.models import Model
 
 
-class SSDLoss(nn.Module):
+class AnchorBoxLoss(nn.Module):
+
+    def forward(self,
+                class_pred: torch.Tensor,
+                offset_pred: torch.Tensor,
+                class_label: torch.Tensor,
+                offset_label: torch.Tensor):
+        raise NotImplementedError
+
+
+class SSDLoss(AnchorBoxLoss):
 
     def __init__(self, class_criterion, reg_criterion):
         super(SSDLoss, self).__init__()
         self.class_criterion = class_criterion
         self.reg_criterion = reg_criterion
 
-    def forward(self, preds, targ):
-        box_idxs, reg_targs = targ
-        b = reg_targs.shape[0]
-        c = reg_targs.shape[1]
+    def forward(self,
+                class_pred: torch.Tensor,
+                offset_pred: torch.Tensor,
+                class_label: torch.Tensor,
+                offset_label: torch.Tensor):
+        """
+        :param class_pred: (b x h x w) classification score for every object
+        class in each grid cell
+        :param offset_pred: (b x 5)
+        :param class_label: (b x h x w) One hot tensor.
+        :param offset_label: (b x 5) The offset parameters for the best box for each sample.
+        :return:
+        """
+        class_targs, reg_targs = class_label, offset_label
 
-        class_preds, reg_preds = preds
-        class_preds = class_preds.view(b, -1)
-        reg_preds = reg_preds.view(b, c, -1)
-        nbox = reg_preds.shape[2]
-
-        class_targs = torch.zeros(b, nbox, dtype=torch.float32,
-                                  device=reg_preds.device)
-        class_targs[torch.arange(b), box_idxs.squeeze()] = 1.
+        class_preds, reg_preds = class_pred, offset_pred
 
         # mining for negatives!
         keep = class_targs > 0
-        conf_preds = torch.sigmoid(class_preds)
+        conf_preds = class_preds
         conf_preds[keep] = 0.  # only find negatives
         _, topthree = conf_preds.topk(3, 1)  # TODO: make ratio configurable
         keep.scatter_(1, topthree, 1.)
         class_loss = self.class_criterion(class_preds[keep], class_targs[keep])
 
-        reg_preds = reg_preds[torch.arange(b), :, box_idxs.squeeze()]  # shape (b, 5)
         reg_loss = self.reg_criterion(reg_preds, reg_targs)
-        return class_loss + reg_loss
+        return {'loss': class_loss + reg_loss, 'class_loss': class_loss, 'reg_loss': reg_loss}
 
 
 class CourtScoreLoss(Model):

@@ -1,5 +1,6 @@
 import numpy as np
 import math
+import cv2
 from overrides import overrides
 from typing import List, Tuple, Dict, Iterable
 
@@ -7,13 +8,13 @@ from allennlp.models import Model
 from allennlp.data import Vocabulary
 
 from src.models.loss import SSDLoss, CourtScoreLoss
-from src.vision.transforms import BoxToCoords, box_to_coords
+from src.vision.transforms import BoxToCoords, box_to_coords, BoundingBox
+from src.models import metrics
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as torch_models
-import src.utils as utils
 
 
 class KeypointModel(nn.Module):
@@ -39,21 +40,284 @@ class StdConv(nn.Module):
         return self.drop(self.bn(F.relu(self.conv(x))))
 
 
-class SimpleConvNet(KeypointModel):
-    def __init__(self, keypoints, channels):
-        super(SimpleConvNet, self).__init__(keypoints, channels)
-        self.conv1 = StdConv(channels, 32, stride=1)
-        self.conv2 = StdConv(32, 32, stride=2)
-        self.conv3 = StdConv(32, 64, stride=1)
-        self.conv4 = StdConv(64, 64, stride=2)
-        self.out = nn.Conv2d(64, keypoints, 3)
+class ScoreModel(Model):
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
-        x = self.conv4(x)
-        return self.out(x)
+    pass
+
+@Model.register("score_head")
+class ScoreHead(Model):
+    """
+    A prediction head that can be stacked on a feature pyramid. This head
+    outputs heatmaps for each court vertex as well as SSD predictions for the
+    scoreboard location and size.
+    """
+
+    def __init__(self, in_channels: int, feature_channels: int = 64, nmaps: int = 4):
+        """
+        :param in_channels: input channels for each feature map.
+        :param feature_channels: number of intermediate channels before output predictions
+        :param nmaps: the number of different sized feature maps. These maps should be ordered
+                      largest to smallest and should be in increasing powers of two. For example,
+                      `nmaps = 4` could have 4 feature maps of sizes [56x56, 28x28, 14x14, 7x7].
+        """
+        super(ScoreHead, self).__init__(None)
+
+        score_regression_channels = 5
+        score_location_channels = 1
+        self.court_convs = nn.ModuleList([DoubleConv(in_channels, feature_channels)
+                                          for _ in range(nmaps)])
+        self.conv1 = StdConv(feature_channels * nmaps, feature_channels, drop=0.4)
+        self.out_conv_score = nn.Conv2d(feature_channels,
+                                        score_location_channels + score_regression_channels,
+                                        kernel_size=3, padding=1)
+
+    def forward(self, feature_maps):
+        out = [layer.forward(feature_map) for layer, feature_map in
+                         zip(self.court_convs, feature_maps)]
+        out = torch.cat([F.interpolate(c, scale_factor=2**j) for j, c
+                           in enumerate(out)], dim=1)
+        out = self.conv1(out)
+        out_score = self.out_conv_score(out)
+        out_score_class = out_score[:, 0, :, :]
+        out_score_reg = torch.tanh(out_score[:, 1:, :, :])
+        return {
+            "score_class": out_score_class,
+            "score_offset": out_score_reg
+        }
+
+@Model.register("anchor_score")
+class AnchorScoreModel(Model):
+    """
+    A model that wraps an SSD model, but holds anchor box data as parameters. These
+    parameters are saved along with the model and can be used at inference time.
+    """
+
+    def __init__(self, stages: List[Model],
+                        grid_sizes: List[List[int]],
+                        box_sizes: List[List[int]],
+                        im_size: List[int],
+                        angle_scale: int):
+        super(AnchorScoreModel, self).__init__(Vocabulary())
+        self.model = nn.Sequential(*stages)
+        self.boxes, self.offsets = self.get_anchors(grid_sizes, box_sizes, im_size, angle_scale)
+        self.boxes = torch.nn.Parameter(self.boxes, requires_grad=False)
+        self.offsets = torch.nn.Parameter(self.offsets, requires_grad=False)
+        self.grid_sizes = grid_sizes
+        self.im_size = im_size
+        class_crit = nn.BCEWithLogitsLoss()
+        reg_crit = nn.L1Loss()
+        self.criterion = SSDLoss(class_crit, reg_crit)
+        self._metrics = {}
+        self._metric = metrics.IOU(im_size)
+
+    def forward(self,
+                img: torch.Tensor,
+                court: torch.Tensor = None,
+                score: torch.Tensor = None) -> Dict[str, torch.Tensor]:
+        out = self.model.forward(img)
+        if score is not None:
+            score_class = AnchorBoxModel.get_best(self.boxes, score)
+            score_offset = (score - self.boxes[score_class]) / self.offsets[score_class]
+            labels = {'score_offset': score_offset, 'score_class': score_class}
+            loss_dict = self.criterion((out['score_class'], out['score_offset']),
+                                       (score_class.long().to(score.device), score_offset.to(score.device)))
+            self._metric(self.decode(out)['score'].cpu(),
+                         score.cpu())
+            self._metrics = {f'model_{k}': v.item() for k, v in loss_dict.items()}
+            out['loss'] = loss_dict['loss']
+        return out
+
+    @overrides
+    def get_metrics(self, reset: bool = False):
+        self._metrics.update({"IOU": self._metric.get_metric(reset)})
+        return self._metrics
+
+    @overrides
+    def decode(self, output_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """
+        Convert the scoreboard predictions to coordinates.
+        """
+        class_score = output_dict['score_class']
+        reg_score = output_dict['score_offset']
+        b = class_score.shape[0]
+        box_idxs = torch.argmax(class_score.view(b, -1), dim=1)
+        reg_score = reg_score.view(b, 5, -1)[torch.arange(b), :, box_idxs]
+        reg_score = reg_score * self.offsets[box_idxs] + self.boxes[box_idxs]
+        out = {'score': reg_score}
+        return out
+
+    def heatmaps_to_vertices(self, heatmaps: torch.Tensor, width: int, height: int) -> torch.Tensor:
+        hmaps = heatmaps.detach().numpy()
+        grid_size = max(self.grid_sizes)
+        x, y = np.unravel_index(
+            np.argmax(hmaps.reshape(hmaps.shape[0], hmaps.shape[1], -1), axis=2), hmaps.shape[-2:])
+        resize_scale = np.array([height / grid_size[1], width / grid_size[0]])
+        court_vertices = np.stack([y, x], axis=2) * resize_scale
+        return torch.from_numpy(court_vertices)
+
+    def box_to_vertices(self, boxes: torch.Tensor, width: int, height: int):
+        coords = box_to_coords(boxes)
+        resize = torch.tensor([height / self.im_size[0], width / self.im_size[1]],
+                              dtype=torch.float32)
+        return coords * resize
+
+    @staticmethod
+    def get_anchors(grid_sizes: List[Tuple[int, int]],
+                    box_sizes: List[Tuple[int, int]],
+                    im_size: Tuple[int, int],
+                    angle_scale: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        boxes = []
+        offsets = []
+        for gw, gh in grid_sizes:
+            ix = torch.arange(gw).unsqueeze(1).repeat(1, gh).view(-1)
+            iy = torch.arange(gh).unsqueeze(1).repeat(gw, 1).view(-1)
+            cw, ch = im_size[0] / gw, im_size[1] / gh
+            for bw, bh in box_sizes:
+                scale = torch.tensor([ch, cw, 1, 1, 1], dtype=torch.float32)
+                offset = torch.tensor([ch / 2, cw / 2, 0, 0, 0], dtype=torch.float32)
+                _boxes = torch.stack((iy, ix, torch.ones_like(ix) * bw, torch.ones_like(ix) * bh,
+                                      torch.zeros_like(ix)), dim=1).type(torch.float32)
+                _offsets = torch.ones((ix.shape[0], 5)) * \
+                           torch.tensor([ch / 2, cw / 2, bw / 2, bh / 2, angle_scale])
+                boxes.append(_boxes * scale + offset)
+                offsets.append(_offsets)
+        return torch.cat(boxes).type(torch.float32), torch.cat(offsets).type(torch.float32)
+
+    @staticmethod
+    def get_best(boxes: torch.Tensor, label_boxes: torch.Tensor) -> torch.Tensor:
+        """
+        Given anchor boxes and a set of label boxes, match each label box
+        to the best anchor box. It does this by matching each label box to the
+        anchor box with the closest center.
+
+        TODO: this should use Jaccard similarity
+        """
+        diff = label_boxes[:, :2].unsqueeze(1) - boxes[:, :2]
+        return torch.pow(diff, 2).sum(dim=2).argmin(dim=1)
+
+
+@Model.register("resnet")
+class ResnetScoreModel(ScoreModel):
+
+    def __init__(self,
+                 keypoints: int,
+                 im_size: Tuple[int, int],
+                 angle_scale: float = 360.,
+                 width_scale: int = 100,
+                 height_scale: int = 100):
+        super(ResnetScoreModel, self).__init__(None)
+        res = torch_models.resnet34(pretrained=True)
+        for p in res.parameters():
+            p.requires_grad = False
+        self.backbone = nn.Sequential(*list(res.children())[:-4])
+        self.out_conv = StdConv(128, 32)
+        nfeatures = self._get_last_conv_size(im_size, nn.Sequential(self.backbone, self.out_conv))
+        self.out = nn.Sequential(nn.Linear(nfeatures, keypoints))
+        self.im_size = im_size
+        self.width_scale = width_scale
+        self.height_scale = height_scale
+        self.angle_scale = angle_scale
+        self._scale_tensor = torch.tensor([self.im_size[0], self.im_size[1], width_scale,
+                                           height_scale, angle_scale])
+        self._forward_count = 0
+        self._metric = metrics.IOU(im_size)
+
+    @staticmethod
+    def _get_last_conv_size(im_size: Tuple[int, int], layers: nn.Module):
+        rand = torch.rand(1, 3, im_size[0], im_size[1])
+        out = layers.forward(rand)
+        return out.numel()
+
+    def forward(self,
+                img: torch.Tensor,
+                court: torch.Tensor = None,
+                score: torch.Tensor = None) -> Dict[str, torch.Tensor]:
+        score = score / self._scale_tensor.to(score.device)
+        x = self.backbone(img)
+        x = self.out_conv(x)
+        x = self.out(x.view(x.shape[0], -1))
+        pred = torch.sigmoid(x)
+        out = {'score': pred}
+        if score is not None:
+            out['loss'] = F.mse_loss(pred, score)
+            self._forward_count += pred.shape[0]
+            self._metric(pred.cpu() * self._scale_tensor, score.cpu() * self._scale_tensor)
+        return out
+
+    @overrides
+    def get_metrics(self, reset: bool = False):
+        return {"IOU": self._metric.get_metric(reset)}
+
+    @overrides
+    def decode(self, output_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """
+        Convert the scoreboard predictions to coordinates.
+        """
+        return {'score': output_dict['score'] * self._scale_tensor}
+
+
+@Model.register("simple")
+class SimpleConvNet(ScoreModel):
+
+    def __init__(self,
+                 keypoints: int,
+                 im_size: Tuple[int, int],
+                 angle_scale: float = 360.,
+                 width_scale: int = 100,
+                 height_scale: int = 100):
+        super(SimpleConvNet, self).__init__(None)
+        self.layers = nn.Sequential(*[
+            StdConv(3, 32, stride=1),
+            StdConv(32, 32, stride=2),
+            StdConv(32, 64, stride=1),
+            StdConv(64, 64, stride=2),
+            StdConv(64, 128, stride=1),
+            StdConv(128, 128, stride=2),
+            StdConv(128, 256, stride=1),
+            StdConv(256, 256, stride=2)
+        ])
+        self.width_scale = width_scale
+        self.height_scale = height_scale
+        self.angle_scale = angle_scale
+        self.im_size = im_size
+        self._scale_tensor = torch.tensor([self.im_size[0], self.im_size[1], width_scale,
+                                           height_scale, angle_scale])
+        fc_params = self._get_last_conv_size(im_size, self.layers)
+        self.out = nn.Linear(fc_params, keypoints)
+        self._forward_count = 0
+        self._metric = metrics.IOU(im_size)
+
+    @staticmethod
+    def _get_last_conv_size(im_size: Tuple[int, int], layers: nn.Module):
+        rand = torch.rand(1, 3, im_size[0], im_size[1])
+        out = layers.forward(rand)
+        return out.numel()
+
+    @overrides
+    def decode(self, output_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """
+        Convert the scoreboard predictions to coordinates.
+        """
+        return {'score': output_dict['score'] * self._scale_tensor}
+
+    def forward(self,
+                img: torch.Tensor,
+                court: torch.Tensor = None,
+                score: torch.Tensor = None) -> Dict[str, torch.Tensor]:
+        score = score / self._scale_tensor.to(score.device)
+        x = self.layers(img)
+        x = self.out(x.view(x.shape[0], -1))
+        pred = torch.sigmoid(x)
+        out = {'score': pred}
+        if score is not None:
+            out['loss'] = F.mse_loss(pred, score)
+            self._forward_count += pred.shape[0]
+            self._metric(pred.cpu() * self._scale_tensor, score.cpu() * self._scale_tensor)
+        return out
+
+    @overrides
+    def get_metrics(self, reset: bool = False):
+        return {"IOU": self._metric.get_metric(reset)}
 
 
 class PoseBlock(nn.Module):
@@ -127,7 +391,8 @@ class SimplePose(KeypointModel):
         return output[-1]
 
 
-class PoseUNet(KeypointModel):
+@Model.register("pose_unet")
+class PoseUNet(Model):
 
     def __init__(self, keypoints, channels, filters):
         super(PoseUNet, self).__init__(keypoints, channels)
@@ -142,8 +407,8 @@ class PoseUNet(KeypointModel):
         self.up4 = Up(filters * 2, filters)
         self.outc = OutConv(filters, keypoints)
 
-    def forward(self, x):
-        x1 = self.inc(x)
+    def forward(self, img: torch.Tensor):
+        x1 = self.inc(img)
         x2 = self.down1(x1)
         x3 = self.down2(x2)
         x4 = self.down3(x3)
@@ -276,6 +541,8 @@ class BackboneModel(Model):
         self.stages.append(base.layer4)
         for p in self.parameters():
             p.requires_grad = not freeze
+        for p in self.stages[0].parameters():
+            p.requires_grad = False
 
     def get_channels(self) -> List[int]:
         im = torch.randn(1, 3, 224, 224)
