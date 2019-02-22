@@ -2,15 +2,14 @@ matplotlib
 numpy
 pandas
 scipy
-pytorch==0.4.1
+torch==0.4.1
 torchvision
 cookiecutter
-opencv
+opencv-python
 ipython
 tqdm
 scikit-learn
 jupyter
-nb_conda
 scikit-image
 tensorboard
 tensorflow
