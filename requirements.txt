@@ -1,0 +1,27 @@
+matplotlib
+numpy
+pandas
+scipy
+pytorch=0.4.1
+torchvision
+cookiecutter
+opencv
+ipython
+tqdm
+scikit-learn
+jupyter
+nb_conda
+scikit-image
+tensorboard
+tensorflow
+protobuf
+git+https://github.com/hmmlearn/hmmlearn.git
+pytesseract
+ipdb
+allennlp
+augmentor
+albumentations
+lime
+shap
+umap
+-e .
