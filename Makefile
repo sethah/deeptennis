@@ -37,43 +37,43 @@ test_all:
 
 ## Make Dataset
 data: requirements
-	$(PYTHON_INTERPRETER) src/data/make_dataset.py
+	$(PYTHON_INTERPRETER) deeptennis/data/make_dataset.py
 
 ALL_VIDEOS=$(wildcard $(DATA_DIR)/raw/*.mp4)
 
 score_extract: $(addprefix $(DATA_DIR)/interim/scoreboard/, $(addsuffix .pkl, $(basename $(notdir $(ALL_VIDEOS)))))
 $(DATA_DIR)/interim/scoreboard/%.pkl: $(DATA_DIR)/processed/frames/%
-	python src/features/extract_scoreboard.py \
+	python deeptennis/features/extract_scoreboard.py \
 	--save-path $@ \
 	--frames-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \
-	--meta-file $(PROJECT_DIR)/src/match_meta.json
+	--meta-file $(PROJECT_DIR)/deeptennis/match_meta.json
 
 score_mask_extract: $(addprefix $(DATA_DIR)/interim/score_mask/, $(basename $(notdir $(ALL_VIDEOS))))
 $(DATA_DIR)/interim/score_mask/%: $(DATA_DIR)/processed/frames/%
-	python src/features/extract_scoreboard.py \
+	python deeptennis/features/extract_scoreboard.py \
 	--save-path $@ \
 	--frames-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \
-	--meta-file $(PROJECT_DIR)/src/match_meta.json \
+	--meta-file $(PROJECT_DIR)/deeptennis/match_meta.json \
 	--segmentation 1
 
 court_extract: $(addprefix $(DATA_DIR)/interim/court/, $(addsuffix .pkl, $(basename $(notdir $(ALL_VIDEOS)))))
 $(DATA_DIR)/interim/court/%.pkl: $(DATA_DIR)/interim/action_mask/%.npy
-	python src/features/extract_court_keypoints.py \
+	python deeptennis/features/extract_court_keypoints.py \
 	--mask-path $< \
 	--save-path $@ \
 	--frames-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \
-	--meta-file $(PROJECT_DIR)/src/match_meta.json
+	--meta-file $(PROJECT_DIR)/deeptennis/match_meta.json
 
 clip_videos: $(addprefix $(DATA_DIR)/interim/match_clips_video/, $(notdir $(ALL_VIDEOS)))
 $(DATA_DIR)/interim/match_clips_video/%.mp4: $(DATA_DIR)/interim/clips/%.pkl
-	python src/data/clips2vid.py \
+	python deeptennis/data/clips2vid.py \
 	--clip-path $< \
 	--save-path $@ \
 	--frame-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \
 
 .PRECIOUS: $(DATA_DIR)/interim/action_mask/%.npy
 $(DATA_DIR)/interim/action_mask/%.npy: $(DATA_DIR)/interim/featurized_frames/%.npy
-	python src/features/extract_action.py \
+	python deeptennis/features/extract_action.py \
 	--features-path $< \
 	--save-path $@
 
@@ -82,7 +82,7 @@ featurized: $(addprefix $(DATA_DIR)/interim/featurized_frames/, $(addsuffix .npy
 $(DATA_DIR)/interim/featurized_frames/%.npy : FEATURIZE_PCA = 10
 $(DATA_DIR)/interim/featurized_frames/%.npy : BATCH_SIZE = 32
 $(DATA_DIR)/interim/featurized_frames/%.npy : $(DATA_DIR)/processed/frames/%
-	python src/features/featurize_frames.py \
+	python deeptennis/features/featurize_frames.py \
 	--img-path $< \
 	--save-path $@ \
 	--gpu $(USE_GPU) \
@@ -94,7 +94,7 @@ frames: FPS = 1
 frames: $(addprefix $(DATA_DIR)/processed/frames/, $(basename $(notdir $(ALL_VIDEOS))))
 .PRECIOUS: $(DATA_DIR)/processed/frames/%
 $(DATA_DIR)/processed/frames/%: $(DATA_DIR)/raw/%.mp4
-	python src/data/vid2img.py \
+	python deeptennis/data/vid2img.py \
 	--vid-path $< \
 	--img-path $@ \
 	--fps $(FPS) \
@@ -116,7 +116,7 @@ clean:
 
 ## Lint using flake8
 lint:
-	flake8 src
+	flake8 deeptennis
 
 ## Upload Data to S3
 sync_data_to_s3:
