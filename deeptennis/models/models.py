@@ -7,9 +7,9 @@ from typing import List, Tuple, Dict, Iterable
 from allennlp.models import Model
 from allennlp.data import Vocabulary
 
-from src.models.loss import SSDLoss, CourtScoreLoss
-from src.vision.transforms import BoxToCoords, box_to_coords, BoundingBox
-from src.models import metrics
+from deeptennis.models.loss import SSDLoss, CourtScoreLoss
+from deeptennis.vision.transforms import BoxToCoords, box_to_coords, BoundingBox
+from deeptennis.models import metrics
 
 import torch
 import torch.nn as nn

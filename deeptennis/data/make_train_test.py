@@ -6,8 +6,8 @@ from pathlib import Path
 import pickle
 from typing import List, Iterable, Tuple, Dict, NamedTuple, Any
 
-from src.data.clip import Video
-from src.vision.transforms import box_to_coords, BoundingBox
+from deeptennis.data.clip import Video
+from deeptennis.vision.transforms import box_to_coords, BoundingBox
 
 
 class Annotation(NamedTuple):

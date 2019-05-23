@@ -23,4 +23,5 @@ albumentations
 lime
 shap
 umap
+mlflow
 -e .

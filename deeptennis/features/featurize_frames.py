@@ -11,7 +11,7 @@ import torchvision.models as models
 
 from sklearn.decomposition import PCA
 
-from src.data.dataset import ImageFilesDataset
+from deeptennis.data.dataset import ImageFilesDataset
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

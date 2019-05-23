@@ -5,6 +5,7 @@ from logging.config import fileConfig
 fileConfig('logging_config.ini')
 import json
 import _jsonnet
+import mlflow
 
 from allennlp.training import Trainer
 from allennlp.training.learning_rate_schedulers import LearningRateWithoutMetricsWrapper, SlantedTriangular, CosineWithRestarts
@@ -16,13 +17,19 @@ from allennlp.common import Params
 
 import torch.nn as nn
 
-from src.data.dataset import CourtAndScoreTransform, ImagePathsDataset, TennisDatasetReader
-from src.vision.transforms import *
-import src.models.models as models
-import src.models.vision_models as models
+from deeptennis.data.dataset import CourtAndScoreTransform, ImagePathsDataset, TennisDatasetReader
+from deeptennis.vision.transforms import *
+import deeptennis.models.models as models
+import deeptennis.models.vision_models as models
 
 logger = logging.getLogger(__name__)
 
+def log_params(d, prefix=''):
+    for k, v in d.items():
+        if isinstance(v, dict):
+            log_params(v, prefix + k + '_')
+        else:
+            mlflow.log_param(prefix + k, v)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -63,16 +70,18 @@ if __name__ == "__main__":
                                  cut_frac=0.5,
                                  gradual_unfreezing=params.get("gradual_unfreezing", False))
 
-    trainer = Trainer(model, optimizer, iterator, train_instances, valid_instances,
-                      learning_rate_scheduler=LearningRateWithoutMetricsWrapper(lr_sched),
-                      serialization_dir=args.checkpoint_path,
-                      num_epochs=epochs,
-                      summary_interval=args.log_interval,
-                      should_log_learning_rate=True,
-                      cuda_device=0 if use_gpu else -1,
-                      histogram_interval=args.log_interval * 10,
-                      validation_metric=params.get("valid_metric", "-loss"),
-                      patience=params.get("patience", 2),
-                      num_serialized_models_to_keep=2)
-    trainer.train()
+    with mlflow.start_run():
+        mlflow.log_artifact(args.param_file)
+        trainer = Trainer(model, optimizer, iterator, train_instances, valid_instances,
+                          learning_rate_scheduler=LearningRateWithoutMetricsWrapper(lr_sched),
+                          serialization_dir=args.checkpoint_path,
+                          num_epochs=epochs,
+                          summary_interval=args.log_interval,
+                          should_log_learning_rate=True,
+                          cuda_device=0 if use_gpu else -1,
+                          histogram_interval=args.log_interval * 10,
+                          validation_metric=params.get("valid_metric", "-loss"),
+                          patience=params.get("patience", 2),
+                          num_serialized_models_to_keep=2)
+        trainer.train()
 

@@ -16,9 +16,9 @@ from allennlp.common import Params
 
 import torch.nn as nn
 
-from src.data.dataset import CourtAndScoreTransform, ImagePathsDataset, TennisDatasetReader
-from src.vision.transforms import *
-import src.models.models as models
+from deeptennis.data.dataset import CourtAndScoreTransform, ImagePathsDataset, TennisDatasetReader
+from deeptennis.vision.transforms import *
+import deeptennis.models.models as models
 
 logger = logging.getLogger(__name__)
 

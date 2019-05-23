@@ -9,7 +9,7 @@ import cv2
 import pickle
 
 
-from src.vision.transforms import BoundingBox
+from deeptennis.vision.transforms import BoundingBox
 
 
 def dilate_image(image, thresh_low=180):

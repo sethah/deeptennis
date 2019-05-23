@@ -13,11 +13,11 @@ from torch.utils.data.dataloader import default_collate
 from allennlp.data.fields import ArrayField
 from allennlp.data import Instance
 
-from src.data.clip import Video
-from src.data.dataset import ImageFilesDataset
-from src.vision.transforms import *
-import src.models.models as models
-import src.utils as utils
+from deeptennis.data.clip import Video
+from deeptennis.data.dataset import ImageFilesDataset
+from deeptennis.vision.transforms import *
+import deeptennis.models.models as models
+import deeptennis.utils as utils
 
 
 if __name__ == "__main__":

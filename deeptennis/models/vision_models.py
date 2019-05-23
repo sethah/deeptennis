@@ -5,9 +5,9 @@ from typing import List, Tuple, Dict, Iterable
 from allennlp.models import Model
 from allennlp.data import Vocabulary
 
-from src.models.loss import AnchorBoxLoss, SSDLoss, CourtScoreLoss
-from src.models import metrics
-from src.models.models import FPN, BackboneModel, StdConv, DoubleConv, InConv, Down, Up, OutConv
+from deeptennis.models.loss import AnchorBoxLoss, SSDLoss, CourtScoreLoss
+from deeptennis.models import metrics
+from deeptennis.models.models import FPN, BackboneModel, StdConv, DoubleConv, InConv, Down, Up, OutConv
 
 import torch
 import torch.nn as nn

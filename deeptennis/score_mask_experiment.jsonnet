@@ -1,6 +1,7 @@
 local mean = [0.4306,0.4381,0.3884];
 local std = [0.2100,0.1791,0.1697];
 local im_size = [224, 224];
+local learning_rate = 1e-3;
 {
   "seed": 42,
   "valid_metric": "+IOU",
@@ -73,9 +74,9 @@ local im_size = [224, 224];
   }*/
     "optim": {
     "type": "adam",
-    "lr": 5e-3,
+    "lr": learning_rate,
     "parameter_groups": [
-      [["encoder*"], {'initial_lr': 5e-3}]
+      [["encoder*"], {'initial_lr': learning_rate}]
     ]
   }
 }

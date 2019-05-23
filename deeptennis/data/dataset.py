@@ -18,7 +18,7 @@ import torchvision.transforms.functional as tvf
 import albumentations as aug
 from albumentations.core.transforms_interface import ImageOnlyTransform
 
-import src.vision.transforms as transforms
+import deeptennis.vision.transforms as transforms
 
 
 def compute_mean_std(ds: torch.utils.data.Dataset):

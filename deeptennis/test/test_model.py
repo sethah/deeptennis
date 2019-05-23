@@ -6,7 +6,7 @@ from unittest import TestCase
 
 import torch
 
-from src.models.vision_models import *
+from deeptennis.models.vision_models import *
 
 
 class MetricTestCase(TestCase):  # pylint: disable=too-many-public-methods

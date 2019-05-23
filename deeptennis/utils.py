@@ -11,7 +11,7 @@ import torch
 import torch.utils.data as data
 import torchvision.transforms as tvt
 
-from src.vision.transforms import BoundingBox
+from deeptennis.vision.transforms import BoundingBox
 
 
 def image_norm(image_iter):

@@ -5,9 +5,9 @@ import os
 from pathlib import Path
 import shutil
 
-from src.data.clip import ActionVideo
-from src.vision.transforms import *
-import src.utils as utils
+from deeptennis.data.clip import ActionVideo
+from deeptennis.vision.transforms import *
+import deeptennis.utils as utils
 
 
 if __name__ == "__main__":

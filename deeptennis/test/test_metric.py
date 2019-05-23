@@ -8,7 +8,7 @@ from unittest import TestCase
 
 import torch
 
-from src.models.metrics import *
+from deeptennis.models.metrics import *
 
 TEST_DIR = tempfile.mkdtemp(prefix="allennlp_tests")
 

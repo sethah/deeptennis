@@ -14,7 +14,7 @@ import torchvision.transforms as tvt
 
 from allennlp.training.metrics import Metric
 
-from src.vision.transforms import BoundingBox
+from deeptennis.vision.transforms import BoundingBox
 
 
 class SegmentationIOU(Metric):
