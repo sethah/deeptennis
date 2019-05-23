@@ -2,7 +2,7 @@ import numpy as np
 import itertools
 import cv2
 import numbers
-from typing import List, Tuple, NamedTuple
+from typing import List, NamedTuple
 
 from sklearn.metrics.pairwise import rbf_kernel
 
@@ -157,7 +157,6 @@ class BoundingBox(object):
         """
         assert len(points) in [4, 5]
         return cls(*cls._box_to_coords(*points, centered))
-
 
 
 class BoxToCoords(object):
