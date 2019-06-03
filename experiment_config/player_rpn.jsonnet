@@ -9,7 +9,7 @@ local TRAIN_AUGMENTATION = [
                 "width": 512
             },
             {
-                "type": "bgr_normalize"
+                "type": "normalize"
             },
             {
                 "type": "horizontal_flip",
@@ -36,18 +36,20 @@ local VALID_AUGMENTATION = [
                 "width": 512
             },
             {
-                "type": "bgr_normalize"
+                "type": "normalize"
             }
         ];
 local TRAIN_READER = {
         "type": "image_annotation",
         "augmentation": TRAIN_AUGMENTATION,
-        "lazy": true
+        "lazy": true,
+        "exclude_fields": ["box_classes"]
 };
 local VALID_READER = {
         "type": "image_annotation",
         "augmentation": VALID_AUGMENTATION,
-        "lazy": true
+        "lazy": true,
+        "exclude_fields": ["box_classes"]
 };
 
 local BASE_ITERATOR = {
@@ -57,18 +59,23 @@ local BASE_ITERATOR = {
 
 local MODEL = {
     "type": "detectron_rpn",
-    "anchor_sizes": [32, 64, 128, 256, 512],
-    "anchor_strides": [4, 8, 16, 32, 64],
+    "anchor_sizes": [[32], [64], [128], [256], [512]],
+    "anchor_aspect_ratios": [[0.5, 1.0, 2.0], [0.5, 1.0, 2.0], [0.5, 1.0, 2.0], [0.5, 1.0, 2.0], [0.5, 1.0, 2.0]],
     "batch_size_per_image": 256
 };
 
 local start_momentum = 0.9;
-local initial_lr = 1e-3;
+local initial_lr = 1e-4;
 {
   "dataset_reader": TRAIN_READER,
   "validation_dataset_reader": VALID_READER,
   "train_data_path": std.extVar("TRAIN_PATH"),
   "validation_data_path": std.extVar("VALIDATION_PATH"),
+  "vocabulary": {
+      // Plausible config for generating the vocabulary.
+      "max_vocab_size": 50000,
+      "min_count": {"tokens": 1}
+  },
   "model": MODEL,
   "iterator": BASE_ITERATOR,
   "trainer": {
@@ -80,12 +87,12 @@ local initial_lr = 1e-3;
       "lr": initial_lr,
       //"momentum": start_momentum,
       "parameter_groups": [
-      [["(^backbone\\._backbone\\.layer1\\.)|(^backbone\\._backbone\\.stem)"], {"initial_lr": initial_lr}],
+      [["(^backbone\\._backbone\\.layer1\\.)|(^backbone\\._backbone\\.bn)|(^backbone\\._backbone\\.conv)"], {"initial_lr": initial_lr}],
       [["^backbone\\._backbone\\.layer2\\."], {"initial_lr": initial_lr}],
       [["^backbone\\._backbone\\.layer3\\."], {"initial_lr": initial_lr}],
       [["^backbone\\._backbone\\.layer4\\."], {"initial_lr": initial_lr}],
       [["(^backbone\\._convert)|(^backbone\\._combine)|(^backbone\\.model\\.fpn)"], {"initial_lr": initial_lr}],
-      [["(^conv)|(^cls_logits)|(^bbox_pred)"], {"initial_lr": initial_lr}],
+      [["^_rpn_head"], {"initial_lr": initial_lr}],
      ]
     },
     "learning_rate_scheduler": {

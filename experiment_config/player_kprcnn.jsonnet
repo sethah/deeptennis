@@ -1,10 +1,10 @@
 local NUM_GPUS = 1;
 local NUM_THREADS = 1;
-local NUM_EPOCHS = 30;
+local NUM_EPOCHS = 60;
 
 local TRAIN_AUGMENTATION = [
             {
-                "type": "resize",
+                "type": "keypoint_resize",
                 "height": 512,
                 "width": 512
             },
@@ -12,7 +12,7 @@ local TRAIN_AUGMENTATION = [
                 "type": "normalize"
             },
             {
-                "type": "horizontal_flip",
+                "type": "keypoint_hflip",
                 "p": 0.5
             },
             {
@@ -31,7 +31,7 @@ local TRAIN_AUGMENTATION = [
         ];
 local VALID_AUGMENTATION = [
             {
-                "type": "resize",
+                "type": "keypoint_resize",
                 "height": 512,
                 "width": 512
             },
@@ -60,8 +60,9 @@ local MODEL = {
     "rpn": {
         "type": "pretrained_rpn",
         "archive_file": std.extVar("RPN_PATH"),
-        "requires_grad": false
+        "requires_grad": true
     },
+    "train_rpn": true,
     "roi_box_head": {
         "type": "faster_rcnn_roi_box",
         "feature_extractor": {
@@ -75,7 +76,20 @@ local MODEL = {
                 "hidden_dims": [256, 256],
                 "activations": 'relu'
             }
-        }
+        },
+        "decoder_thresh": 0.05,
+        "decoder_nms_thresh": 0.2
+    },
+    "roi_keypoint_head": {
+        "type": "faster_rcnn_roi_keypoint",
+        "feature_extractor": {
+            "type": "feedforward",
+            "input_channels": 256,
+            "num_layers": 5,
+            "hidden_channels": 512,
+            "activations": "relu"
+        },
+        "num_keypoints": 4
     }
 };
 
@@ -88,6 +102,10 @@ local initial_lr = 1e-4;
   "validation_data_path": std.extVar("VALIDATION_PATH"),
   "model": MODEL,
   "iterator": BASE_ITERATOR,
+  "vocabulary": {
+      // Use a prespecified vocabulary for efficiency.
+      "directory_path": std.extVar("VOCAB_PATH")
+  },
   "trainer": {
     "num_epochs": NUM_EPOCHS,
     "should_log_learning_rate": true,
