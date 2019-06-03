@@ -56,13 +56,36 @@ $(DATA_DIR)/interim/score_mask/%: $(DATA_DIR)/processed/frames/%
 	--meta-file $(PROJECT_DIR)/deeptennis/match_meta.json \
 	--segmentation 1
 
-court_extract: $(addprefix $(DATA_DIR)/interim/court/, $(addsuffix .pkl, $(basename $(notdir $(ALL_VIDEOS)))))
-$(DATA_DIR)/interim/court/%.pkl: $(DATA_DIR)/interim/action_mask/%.npy
+court_extract: $(addprefix $(DATA_DIR)/interim/court/, $(addsuffix .json, $(basename $(notdir $(ALL_VIDEOS)))))
+$(DATA_DIR)/interim/court/%.json: $(DATA_DIR)/interim/action_mask/%.json
 	python deeptennis/features/extract_court_keypoints.py \
 	--mask-path $< \
 	--save-path $@ \
 	--frames-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \
-	--meta-file $(PROJECT_DIR)/deeptennis/match_meta.json
+	--meta-file $(PROJECT_DIR)/metadata/match_meta.json
+
+player_tracking: $(addprefix $(DATA_DIR)/interim/player_tracking/, $(addsuffix .json, $(basename $(notdir $(ALL_VIDEOS)))))
+$(DATA_DIR)/interim/player_tracking/%.json: $(DATA_DIR)/processed/frames/%
+	find $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) -type f -printf '{"image_path": "%p"}\n' | sort > /tmp/player_tracking_temp.json && \
+	allennlp predict $(PROJECT_DIR)/models/player_rcnn/model.tar.gz /tmp/player_tracking_temp.json \
+	--cuda-device 0 --output-file $@ --silent --predictor default_image \
+	--batch-size 4 \
+	--overrides '{"dataset_reader": {"type": "image_annotation", "augmentation": [{"type": "resize","height": 512, "width": 512}, {"type": "normalize"}], "lazy": true}, "model": {"roi_box_head": {"decoder_thresh": 0.01}}}' \
+	--include-package allencv.data.dataset_readers \
+	--include-package allencv.modules.image_encoders \
+	--include-package allencv.modules.image_decoders \
+	--include-package allencv.modules.im2vec_encoders \
+	--include-package allencv.modules.im2im_encoders \
+	--include-package allencv.models.object_detection \
+	--include-package allencv.predictors \
+	&& rm /tmp/player_tracking_temp.json
+
+$(DATA_DIR)/interim/tracking_videos/%.mp4: $(DATA_DIR)/interim/player_tracking/%.json
+	python deeptennis/data/make_tracking_video.py \
+	--tracking-path $(addsuffix .json, $(DATA_DIR)/interim/player_tracking/$(basename $(notdir $<))) \
+	--frame-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \
+	--save-path $@
+
 
 clip_videos: $(addprefix $(DATA_DIR)/interim/match_clips_video/, $(notdir $(ALL_VIDEOS)))
 $(DATA_DIR)/interim/match_clips_video/%.mp4: $(DATA_DIR)/interim/clips/%.pkl
@@ -71,8 +94,8 @@ $(DATA_DIR)/interim/match_clips_video/%.mp4: $(DATA_DIR)/interim/clips/%.pkl
 	--save-path $@ \
 	--frame-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \
 
-.PRECIOUS: $(DATA_DIR)/interim/action_mask/%.npy
-$(DATA_DIR)/interim/action_mask/%.npy: $(DATA_DIR)/interim/featurized_frames/%.npy
+.PRECIOUS: $(DATA_DIR)/interim/action_mask/%.json
+$(DATA_DIR)/interim/action_mask/%.json: $(DATA_DIR)/interim/featurized_frames/%.npy
 	python deeptennis/features/extract_action.py \
 	--features-path $< \
 	--save-path $@
