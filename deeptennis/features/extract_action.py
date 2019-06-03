@@ -4,6 +4,8 @@ from pathlib import Path
 import logging
 from logging.config import fileConfig
 
+import deeptennis.utils as utils
+
 from sklearn.metrics.pairwise import pairwise_distances
 from hmmlearn.hmm import GaussianHMM
 
@@ -41,5 +43,8 @@ if __name__ == "__main__":
     variances = get_cluster_variances(X, hmm_preds, hmm.means_)
     court_cluster_id = np.argmin(variances)
     mask = hmm_preds == court_cluster_id
-    np.save(str(save_path), mask)
+    mask = [{'action': int(i)} for i in mask]
+    utils.write_json_lines(mask, save_path)
+
+    # np.save(str(save_path), mask)
 

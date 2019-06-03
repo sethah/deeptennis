@@ -6,6 +6,9 @@ import logging
 from logging.config import fileConfig
 import cv2
 import pickle
+from typing import List
+
+import deeptennis.utils as utils
 
 
 def mask_image(img: np.ndarray, pts: np.ndarray, dilate=False):
@@ -111,6 +114,73 @@ def get_top_corner(x_base, y_base, x_serve, y_serve, x_base_opp):
     y_top = y_serve - l * np.cos(theta)
     return x_top, y_top
 
+def get_court_for_frame(frame: np.ndarray,
+                        court_crop_x: List[float],
+                        court_crop_y: List[float],
+                        min_horiz_line_dist: int,
+                        min_vert_line_dist: int,
+                        min_vert_slope: float,
+                        max_horiz_slope: float,
+                        max_baseline_offset: float,
+                        dilate_edges: bool = False) -> List[float]:
+    im_h, im_w = frame.shape[:2]
+    crop_points = np.array([court_crop_x, court_crop_y], dtype=np.int32).T
+    masked_image = mask_image(frame.astype(np.uint8), crop_points, dilate=dilate_edges)
+    lines = cv2.HoughLinesP(
+        masked_image.astype(np.uint8),
+        rho=6,
+        theta=np.pi / 60,
+        threshold=160,
+        lines=np.array([]),
+        minLineLength=40,
+        maxLineGap=25
+    )
+    court = [0] * 8
+    if lines is None:
+        return court
+    lines = lines[:, 0, :]
+    horizontal_lines, vertical_lines = get_lines(lines,
+                                                 min_horiz_len=min_horiz_line_dist,
+                                                 min_vert_len=min_vert_line_dist,
+                                                 min_vert_slope=min_vert_slope,
+                                                 max_horiz_slope=max_horiz_slope)
+    if len(horizontal_lines) < 2 or len(vertical_lines) < 2:
+        return court
+    y_base, y_serve = get_baseline_vertical(horizontal_lines, min_separation=30)
+    if im_h - y_base > max_baseline_offset or y_base == 0 or y_serve == 0:
+        return court
+    right_sideline, left_sideline = get_sidelines(vertical_lines)
+    if not right_sideline.any() or not left_sideline.any():
+        return court
+    x1, x2, x3, x4 = get_keypoints_horizontal(y_base, y_serve, left_sideline, right_sideline)
+    y1, y2, y3, y4 = y_base, y_base, y_serve, y_serve
+    x6, y6 = get_top_corner(x1, y1, x4, y4, x2)
+    x5, y5 = get_top_corner(x2, y2, x3, y3, x1)
+    return [float(x) for x in [x1, y1, x2, y2, x5, y5, x6, y6]]
+
+def get_court_keypoints(frames: List[Path],
+                        mask: np.ndarray,
+                        court_crop_x: List[float],
+                        court_crop_y: List[float],
+                        min_horiz_line_dist: int,
+                        min_vert_line_dist: int,
+                        min_vert_slope: float,
+                        max_horiz_slope: float,
+                        max_baseline_offset: float,
+                        dilate_edges: bool = False
+                        ) -> List[List[float]]:
+    court_boxes = []
+    num_invalid = 0
+    for i, frame in enumerate(frames):
+        img = cv2.imread(str(frame))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        court = get_court_for_frame(img, court_crop_x, court_crop_y, min_horiz_line_dist,
+                                    min_vert_line_dist, min_vert_slope, max_horiz_slope,
+                                    max_baseline_offset, dilate_edges)
+        court_boxes.append(court)
+    logging.debug(f"{num_invalid}/{np.sum(mask)} were invalid.")
+    return court_boxes
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -131,86 +201,22 @@ if __name__ == "__main__":
     if not save_path.parent.exists():
         save_path.parent.mkdir()
 
-    mask = np.load(mask_path)
+    mask = utils.read_json_lines(mask_path)
+    mask = np.array([x['action'] for x in mask])
 
     match_name = frames_path.stem
     match_meta = match_metas[match_name]
-    frame_list = np.array(list(sorted(frames_path.iterdir())))
+    frame_list = list(sorted(frames_path.iterdir()))
+    court_boxes: List[List[float]] = get_court_keypoints(frame_list, mask, match_meta['court_crop']['x'],
+                                      match_meta['court_crop']['y'],
+                                      match_meta['min_horiz_line_dist'],
+                                      match_meta['min_vert_line_dist'],
+                                      match_meta['min_vert_slope'],
+                                      match_meta['max_horiz_slope'],
+                                      match_meta['max_baseline_offset'],
+                                      match_meta['dilate_edges'])
 
-    x, y, w, h = match_meta['box']
-    invert = match_meta['invert']
-    min_w, min_h = match_meta['min_score_text_width'], match_meta['min_score_text_height']
-    thresh_low = match_meta['score_thresh_low']
-    min_score_width = match_meta['min_score_width']
-    logging.debug(f"Begin bounding box detection for {match_name}")
-    court_boxes = []
-    num_invalid = 0
-    for i, frame in enumerate(frame_list):
-        img = cv2.imread(str(frame))
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        im_h, im_w = img.shape[:2]
-        crop_points = np.array([match_meta['court_crop']['x'], match_meta['court_crop']['y']],
-                               dtype=np.int32).T
-        masked_image = mask_image(img.astype(np.uint8), crop_points,
-                                  dilate=match_meta['dilate_edges'])
-        lines = cv2.HoughLinesP(
-            masked_image.astype(np.uint8),
-            rho=6,
-            theta=np.pi / 60,
-            threshold=160,
-            lines=np.array([]),
-            minLineLength=40,
-            maxLineGap=25
-        )
-        if lines is None:
-            court_boxes.append([0] * 8)
-            if mask[i]:
-                logging.debug("lines")
-                logging.debug(frame)
-                num_invalid += 1
-            continue
-        lines = lines[:, 0, :]
-        horizontal_lines, vertical_lines = get_lines(lines,
-                                         min_horiz_len=match_meta['min_horiz_line_dist'],
-                                         min_vert_len=match_meta['min_vert_line_dist'],
-                                         min_vert_slope=match_meta['min_vert_slope'],
-                                         max_horiz_slope=match_meta['max_horiz_slope'])
-        if len(horizontal_lines) < 2 or len(vertical_lines) < 2:
-            court_boxes.append([0] * 8)
-            if mask[i]:
-                logging.debug(frame)
-                logging.debug("bad lines")
-                num_invalid += 1
-            continue
-        y_base, y_serve = get_baseline_vertical(horizontal_lines, min_separation=30)
-        if im_h - y_base > match_meta['max_baseline_offset'] or y_base == 0 or y_serve == 0:
-            court_boxes.append([0] * 8)
-            if mask[i]:
-                logging.debug(frame)
-                logging.debug("baseline offset")
-                num_invalid += 1
-            continue
-        right_sideline, left_sideline = get_sidelines(vertical_lines)
-        if not right_sideline.any() or not left_sideline.any():
-            court_boxes.append([0] * 8)
-            if mask[i]:
-                logging.debug(frame)
-                logging.debug("sidelines")
-                num_invalid += 1
-            continue
-        x1, x2, x3, x4 = get_keypoints_horizontal(y_base, y_serve, left_sideline, right_sideline)
-        y1, y2, y3, y4 = y_base, y_base, y_serve, y_serve
-        x6, y6 = get_top_corner(x1, y1, x4, y4, x2)
-        x5, y5 = get_top_corner(x2, y2, x3, y3, x1)
-        # valid_box = utils.validate_court_box((x1, y1), (x2, y2), (x5, y5), (x6, y6),
-        #                                 im_h=im_h, im_w=im_w)
-        # if not valid_box:
-        #     court_boxes.append(np.zeros(6).tolist())
-        #     num_invalid += 1
-        #     continue
-        court_boxes.append([x1, y1, x2, y2, x5, y5, x6, y6])
-
-    logging.debug(f"{num_invalid}/{np.sum(mask)} were invalid.")
-    save_list = list(zip([f.name for f in frame_list], court_boxes))
-    with open(save_path, 'wb') as save_file:
-        pickle.dump(save_list, save_file)
+    json_lines = []
+    for f, coords in zip(frame_list, court_boxes):
+        json_lines.append({'filename': str(f), 'court': coords})
+    utils.write_json_lines(json_lines, save_path)

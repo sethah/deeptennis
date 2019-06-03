@@ -1,14 +1,14 @@
 import logging
 import itertools
+import json
 import numpy as np
 import pandas as pd
 from pathlib import Path
 import cv2
 from PIL import Image
-from typing import Iterable, Tuple
+from typing import Any, Dict, Iterable, List, Tuple, Union
 
 import torch
-import torch.utils.data as data
 import torchvision.transforms as tvt
 
 from deeptennis.vision.transforms import BoundingBox
@@ -29,6 +29,20 @@ def to_img_np(torch_img):
         return np_img.transpose(1, 2, 0)
     else:
         return np_img
+
+
+def write_json_lines(lines: List[Dict[str, Any]], path: Union[str, Path]):
+    lines = [json.dumps(l) + "\n" for l in lines]
+    with open(path, 'w') as f:
+        f.writelines(lines)
+
+
+def read_json_lines(file_path: str) -> List[Dict[str, Any]]:
+    js_lines = []
+    with open(file_path, 'r') as f:
+        for line in f:
+            js_lines.append(json.loads(line))
+    return js_lines
 
 
 def _IOU(boxes1: torch.Tensor, boxes2: torch.Tensor, im_size: Tuple[int, int]) -> torch.Tensor:
