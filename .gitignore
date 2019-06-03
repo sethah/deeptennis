@@ -3,3 +3,7 @@ __pycache__
 .idea
 ./models
 ./data
+deeptennis.egg-info/
+notebooks/untracked
+.DS_Store
+
