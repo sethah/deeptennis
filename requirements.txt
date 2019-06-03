@@ -1,10 +1,11 @@
+-e .
+
 matplotlib
 numpy
 pandas
 scipy
 torch>=0.4.1
 torchvision
-cookiecutter
 opencv-python
 ipython
 tqdm
@@ -18,10 +19,8 @@ git+https://github.com/hmmlearn/hmmlearn.git
 pytesseract
 ipdb
 allennlp
-augmentor
-albumentations
 lime
 shap
 umap
 mlflow
--e .
+allencv>=0.1.3
