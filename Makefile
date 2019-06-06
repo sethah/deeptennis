@@ -95,7 +95,7 @@ $(DATA_DIR)/interim/match_clips_video/%.mp4: $(DATA_DIR)/interim/clips/%.pkl
 
 .PRECIOUS: $(DATA_DIR)/interim/action_mask/%.json
 $(DATA_DIR)/interim/action_mask/%.json: $(DATA_DIR)/interim/featurized_frames/%.npy
-	python deeptennis/features/extract_action.py \
+	python $(PROJECT_DIR)/scripts/extract_action.py \
 	--features-path $< \
 	--save-path $@
 
@@ -104,7 +104,7 @@ featurized: $(addprefix $(DATA_DIR)/interim/featurized_frames/, $(addsuffix .npy
 $(DATA_DIR)/interim/featurized_frames/%.npy : FEATURIZE_PCA = 10
 $(DATA_DIR)/interim/featurized_frames/%.npy : BATCH_SIZE = 32
 $(DATA_DIR)/interim/featurized_frames/%.npy : $(DATA_DIR)/processed/frames/%
-	python deeptennis/features/featurize_frames.py \
+	python $(PROJECT_DIR)/scripts/featurize_frames.py \
 	--img-path $< \
 	--save-path $@ \
 	--gpu $(USE_GPU) \
