@@ -116,7 +116,7 @@ frames: FPS = 1
 frames: $(addprefix $(DATA_DIR)/processed/frames/, $(basename $(notdir $(ALL_VIDEOS))))
 .PRECIOUS: $(DATA_DIR)/processed/frames/%
 $(DATA_DIR)/processed/frames/%: $(DATA_DIR)/raw/%.mp4
-	python deeptennis/data/vid2img.py \
+	python $(PROJECT_DIR)/scripts/vid2img.py \
 	--vid-path $< \
 	--img-path $@ \
 	--fps $(FPS) \
