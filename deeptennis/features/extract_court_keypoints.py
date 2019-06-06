@@ -5,7 +5,6 @@ from pathlib import Path
 import logging
 from logging.config import fileConfig
 import cv2
-import pickle
 from typing import List
 
 import deeptennis.utils as utils

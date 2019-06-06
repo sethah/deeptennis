@@ -81,11 +81,10 @@ $(DATA_DIR)/interim/player_tracking/%.json: $(DATA_DIR)/processed/frames/%
 	&& rm /tmp/player_tracking_temp.json
 
 $(DATA_DIR)/interim/tracking_videos/%.mp4: $(DATA_DIR)/interim/player_tracking/%.json
-	python deeptennis/data/make_tracking_video.py \
+	python $(PROJECT_DIR)/scripts/make_tracking_video.py \
 	--tracking-path $(addsuffix .json, $(DATA_DIR)/interim/player_tracking/$(basename $(notdir $<))) \
 	--frame-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \
 	--save-path $@
-
 
 clip_videos: $(addprefix $(DATA_DIR)/interim/match_clips_video/, $(notdir $(ALL_VIDEOS)))
 $(DATA_DIR)/interim/match_clips_video/%.mp4: $(DATA_DIR)/interim/clips/%.pkl

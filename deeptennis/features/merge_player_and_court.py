@@ -1,14 +1,7 @@
 import json
-import numpy as np
 import argparse
 from pathlib import Path
-import logging
-from logging.config import fileConfig
 import cv2
-import pickle
-from typing import List
-
-import deeptennis.utils as utils
 from deeptennis.features.extract_court_keypoints import get_court_for_frame
 
 if __name__ == "__main__":
@@ -19,7 +12,6 @@ if __name__ == "__main__":
     parser.add_argument("--meta-file", type=str, default=None)
 
     args = parser.parse_args()
-    # fileConfig('logging_config.ini')
 
     with open(args.meta_file, 'r') as f:
         match_metas = json.load(f)

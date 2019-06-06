@@ -4,6 +4,7 @@ import logging
 import json
 import os
 from pathlib import Path
+import tqdm
 import shutil
 
 from deeptennis.vision.transforms import *
@@ -93,7 +94,7 @@ if __name__ == "__main__":
             'confidence': []
         }
     }
-    for j, tracking in enumerate(tracking_js):
+    for j, tracking in tqdm.tqdm(enumerate(tracking_js)):
         img_scale = np.array([640 / 512, 360 / 512])
         json_dict['image_paths'].append(str(frames[j].name))
         boxes: List[Box] = [Box(score, (np.array(coords).reshape(2, 2) * img_scale).ravel(), name) for score, coords, name in zip(tracking['box_box_scores'],
@@ -176,7 +177,7 @@ if __name__ == "__main__":
     with open(str(clip_video_path.parent / clip_video_path.stem) + ".json", "w") as f:
         json.dump(json_dict, f)
 
-    for i in range(len(frames)):
+    for i in tqdm.tqdm(range(len(frames))):
 
         img = cv2.imread(str(frames[i]))
         if json_dict['is_action'][i]:
