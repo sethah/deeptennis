@@ -23,7 +23,7 @@ if __name__ == "__main__":
         img_path.mkdir(parents=True, exist_ok=True)
 
     subprocess.call(["ffmpeg", "-i", str(vid_path), "-vframes", str(args.vframes),
-                     "-vf", "scale=640:360",
+                     "-vf", "scale=640:360", "-q:v", "2",
                      "-r", str(args.fps), str(img_path / "%05d.jpg")])
 
 

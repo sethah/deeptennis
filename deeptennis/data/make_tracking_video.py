@@ -38,10 +38,12 @@ def tennis_rectangles():
     rects = [outer_court, inner_court, service1, service2, service3, service4]
     return rects
 
+
 def player_boxes_to_court_points(box: np.ndarray, M: np.ndarray) -> np.ndarray:
     points = np.stack([(box[:, 2] - box[:, 0]) / 2 + box[:, 0], box[:, 3], np.ones(box.shape[0])], axis=0)
     converted_points = image_point_to_court_point(points, M)
     return converted_points
+
 
 def image_point_to_court_point(points, M, inverse=True):
     if inverse:
@@ -53,8 +55,6 @@ def image_point_to_court_point(points, M, inverse=True):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--save-path", type=str, default=None)
-    # parser.add_argument("--action-path", type=str)
-    # parser.add_argument("--court-path", type=str)
     parser.add_argument("--tracking-path", type=str)
     parser.add_argument("--frame-path", type=str)
 
@@ -62,18 +62,13 @@ if __name__ == "__main__":
 
     save_path = Path(args.save_path)
     frame_path = Path(args.frame_path)
-    # court_path = Path(args.court_path)
     tracking_path = Path(args.tracking_path)
-    # action_path = Path(args.action_path)
 
-    # action_js = utils.read_json_lines(action_path)
-    # court_js = utils.read_json_lines(court_path)
     tracking_js = utils.read_json_lines(tracking_path)
     frames = sorted(frame_path.iterdir())
 
-
     clip_video_path = save_path.parent / save_path.stem
-    clip_video_path.mkdir(parents=True)
+    clip_video_path.mkdir(parents=True, exist_ok=True)
 
     json_dict = {
         'image_paths': [],
@@ -147,7 +142,6 @@ if __name__ == "__main__":
                                             np.array(_court).reshape(4, 2).astype(np.float32))
             halfway_point = image_point_to_court_point(np.array([0, 78 // 2, 1]).reshape(1, -1).T,
                                                    M, inverse=False)
-            # print(halfway_point)
             halfway_point = halfway_point.ravel()[1]
         else:
             halfway_point = None
@@ -186,20 +180,6 @@ if __name__ == "__main__":
 
         img = cv2.imread(str(frames[i]))
         if json_dict['is_action'][i]:
-            # draw top player box
-            x1, y1, x2, y2 = json_dict['top_player']['box'][i]
-            img = cv2.rectangle(img, (x1, y1), (x2, y2), color=(0, 255, 0), thickness=3)
-            text = "%0.3f" % json_dict['top_player']['confidence'][i]
-            position = (int(x1), int(y2) + 10)
-            cv2.putText(img, text, position, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 2, cv2.LINE_AA)
-
-            # bottom player
-            x1, y1, x2, y2 = json_dict['bottom_player']['box'][i]
-            img = cv2.rectangle(img, (x1, y1), (x2, y2), color=(0, 255, 0), thickness=3)
-            text = "%0.3f" % json_dict['bottom_player']['confidence'][i]
-            position = (int(x1), int(y2) + 10)
-            cv2.putText(img, text, position, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 2, cv2.LINE_AA)
-
             # draw court
             padding = 50
             scale = 2
@@ -211,15 +191,34 @@ if __name__ == "__main__":
                 img = cv2.rectangle(img, (x, y), (x + w, y + h), color=(0, 0, 0), thickness=2)
 
             x, y = json_dict['top_player']['position_unwarped'][i]
-            if json_dict['top_player']['confidence'] != -1:
+            top_valid = (x, y) != (-1, -1)
+            if top_valid:
                 img = cv2.circle(img, (x * scale + padding // 2, int(78 - y) * scale + padding // 2), 5, (0, 255, 0), -1)
             x, y = json_dict['bottom_player']['position_unwarped'][i]
-            if json_dict['bottom_player']['confidence'] != -1:
+            bottom_valid = (x, y) != (-1, -1)
+            if bottom_valid:
                 img = cv2.circle(img, (x * scale + padding // 2, int(78 - y) * scale + padding // 2), 5, (0, 255, 0), -1)
+
+            # draw top player box
+            if top_valid:
+                x1, y1, x2, y2 = json_dict['top_player']['box'][i]
+                img = cv2.rectangle(img, (x1, y1), (x2, y2), color=(0, 255, 0), thickness=3)
+                text = "%0.3f" % json_dict['top_player']['confidence'][i]
+                position = (int(x1), int(y2) + 10)
+                cv2.putText(img, text, position, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 2, cv2.LINE_AA)
+
+            if bottom_valid:
+                # bottom player
+                x1, y1, x2, y2 = json_dict['bottom_player']['box'][i]
+                img = cv2.rectangle(img, (x1, y1), (x2, y2), color=(0, 255, 0), thickness=3)
+                text = "%0.3f" % json_dict['bottom_player']['confidence'][i]
+                position = (int(x1), int(y2) + 10)
+                cv2.putText(img, text, position, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 2, cv2.LINE_AA)
+
         else:
             pass
-        cv2.imwrite(str(clip_video_path / ("%05d.jpg" % i)), img)
-    command = f"ffmpeg -r 1 -i {str(clip_video_path)}/%05d.jpg -vcodec mpeg4 -y {clip_video_path.parent / clip_video_path.stem}.mp4"
+        cv2.imwrite(str(clip_video_path / ("%05d.png" % i)), img)
+    command = f"ffmpeg -r 8 -i {str(clip_video_path)}/%05d.png -c:v libx264 -q:v 2 -vf fps=8 -pix_fmt yuv420p {clip_video_path.parent / clip_video_path.stem}.mp4"
     print(command)
     os.system(command)
     # shutil.rmtree(str(clip_video_path))
