@@ -3,29 +3,16 @@
 A project which applies various machine learning, deep learning, and computer vision techniques
 to videos of professional tennis matches.
 
-## Getting started
+![alt text](reports/figures/djokovic_anderson_wim_18.gif)
+![alt text](reports/figures/osaka_halep_rome_18.gif)
+![alt text](reports/figures/coric_federer_halle_18.gif)
+![alt text](reports/figures/zverev_isner_miami_18.gif)
 
-```
-conda env create -f environment.yml
-```
 
 #### Generate frames from training videos
 
 ```
 make frames FPS=1 VFRAMES=2000
-```
-
-#### Featurize images using pre-trained model
-
-```
-make featurized USE_GPU=1 BATCH_SIZE=64
-```
-
-#### Segment action frames, detect court and scoreboard bounding boxes
-
-```
-make court_extract
-make score_extract
 ```
 
 ## Results
