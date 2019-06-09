@@ -12,10 +12,6 @@ local TRAIN_AUGMENTATION = [
                 "type": "normalize"
             },
             {
-                "type": "keypoint_hflip",
-                "p": 0.5
-            },
-            {
                 "type": "random_brightness_contrast",
                 "p": 0.5
             },
@@ -42,12 +38,16 @@ local VALID_AUGMENTATION = [
 local TRAIN_READER = {
         "type": "image_annotation",
         "augmentation": TRAIN_AUGMENTATION,
-        "lazy": true
+        "lazy": true,
+        "keypoints": true,
+        "num_keypoints": 4
 };
 local VALID_READER = {
         "type": "image_annotation",
         "augmentation": VALID_AUGMENTATION,
-        "lazy": true
+        "lazy": true,
+        "keypoints": true,
+        "num_keypoints": 4
 };
 
 local BASE_ITERATOR = {
@@ -56,7 +56,7 @@ local BASE_ITERATOR = {
 };
 
 local MODEL = {
-    "type": "faster_rcnn",
+    "type": "keypoint_rcnn",
     "rpn": {
         "type": "pretrained_rpn",
         "archive_file": std.extVar("RPN_PATH"),
@@ -64,7 +64,6 @@ local MODEL = {
     },
     "train_rpn": true,
     "roi_box_head": {
-        "type": "faster_rcnn_roi_box",
         "feature_extractor": {
             "type": "flatten",
             "input_channels": 256,
@@ -81,7 +80,6 @@ local MODEL = {
         "decoder_nms_thresh": 0.2
     },
     "roi_keypoint_head": {
-        "type": "faster_rcnn_roi_keypoint",
         "feature_extractor": {
             "type": "feedforward",
             "input_channels": 256,
@@ -89,8 +87,8 @@ local MODEL = {
             "hidden_channels": 512,
             "activations": "relu"
         },
-        "num_keypoints": 4
-    }
+    },
+    "num_keypoints": 4
 };
 
 local start_momentum = 0.7;
@@ -98,8 +96,8 @@ local initial_lr = 1e-4;
 {
   "dataset_reader": TRAIN_READER,
   "validation_dataset_reader": VALID_READER,
-  "train_data_path": std.extVar("TRAIN_PATH"),
-  "validation_data_path": std.extVar("VALIDATION_PATH"),
+  "train_data_path": "https://deeptennis.s3-us-west-1.amazonaws.com/train.tar.gz",
+  "validation_data_path": "https://deeptennis.s3-us-west-1.amazonaws.com/val.tar.gz"
   "model": MODEL,
   "iterator": BASE_ITERATOR,
   "vocabulary": {

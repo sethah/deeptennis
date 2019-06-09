@@ -1,4 +1,8 @@
 import argparse
+from typing import List
+
+import cv2
+import numpy as np
 from typing import NamedTuple, Tuple
 import logging
 import json
@@ -7,7 +11,6 @@ from pathlib import Path
 import tqdm
 import shutil
 
-from deeptennis.vision.transforms import *
 import deeptennis.utils as utils
 
 
@@ -68,7 +71,7 @@ if __name__ == "__main__":
     tracking_js = utils.read_json_lines(tracking_path)
     frames = sorted(frame_path.iterdir())
 
-    clip_video_path = save_path.parent / save_path.stem
+    clip_video_path = save_path / "images"
     clip_video_path.mkdir(parents=True, exist_ok=True)
 
     json_dict = {
@@ -97,8 +100,8 @@ if __name__ == "__main__":
     for j, tracking in tqdm.tqdm(enumerate(tracking_js)):
         img_scale = np.array([640 / 512, 360 / 512])
         json_dict['image_paths'].append(str(frames[j].name))
-        boxes: List[Box] = [Box(score, (np.array(coords).reshape(2, 2) * img_scale).ravel(), name) for score, coords, name in zip(tracking['box_box_scores'],
-                                                                                    tracking['box_box_predictions'],
+        boxes: List[Box] = [Box(score, (np.array(coords).reshape(2, 2) * img_scale).ravel(), name) for score, coords, name in zip(tracking['box_scores'],
+                                                                                    tracking['box_proposals'],
                                                                                     tracking['box_class'])]
         player_boxes = [box for box in boxes if box.name == 'player']
         court_boxes = [box for box in boxes if box.name == 'court']
@@ -139,6 +142,12 @@ if __name__ == "__main__":
                 [36, 78],
                 [0, 78]
             ])
+            sorted_x = sorted(_court, key=lambda x: x[0])
+            bottom_left = max(sorted_x[:2], key=lambda x: x[1])
+            top_left = min(sorted_x[:2], key=lambda x: x[1])
+            bottom_right = max(sorted_x[2:], key=lambda x: x[1])
+            top_right = min(sorted_x[2:], key=lambda x: x[1])
+            _court = [bottom_left, bottom_right, top_right, top_left]
             M = cv2.getPerspectiveTransform(true_court.astype(np.float32),
                                             np.array(_court).reshape(4, 2).astype(np.float32))
             halfway_point = image_point_to_court_point(np.array([0, 78 // 2, 1]).reshape(1, -1).T,
@@ -150,8 +159,12 @@ if __name__ == "__main__":
                                                                 halfway_point=halfway_point or 360 // 2)
         if top_player_box is not None and is_action:
             x1, y1, x2, y2 = top_player_box.coords
-            player_marker = player_boxes_to_court_points(top_player_box.coords.reshape(1, 4), M)
-            xw1, yw1 = player_marker.ravel()
+            try:
+                player_marker = player_boxes_to_court_points(top_player_box.coords.reshape(1, 4), M)
+                xw1, yw1 = player_marker.ravel()
+                print(xw1, yw1, x1, y1, x2, y2)
+            except:
+                xw1, yw1 = 0, 0
             json_dict['top_player']['box'].append([int(z) for z in [x1, y1, x2, y2]])
             json_dict['top_player']['position'].append((int((x1 + x2) / 2), int(y2)))
             json_dict['top_player']['position_unwarped'].append((int(xw1), int(yw1)))
@@ -163,8 +176,11 @@ if __name__ == "__main__":
             json_dict['top_player']['confidence'].append(-1)
         if bottom_player_box is not None and is_action:
             x1, y1, x2, y2 = bottom_player_box.coords
-            player_marker = player_boxes_to_court_points(bottom_player_box.coords.reshape(1, 4), M)
-            xw1, yw1 = player_marker.ravel()
+            try:
+                player_marker = player_boxes_to_court_points(bottom_player_box.coords.reshape(1, 4), M)
+                xw1, yw1 = player_marker.ravel()
+            except:
+                xw1, yw1 = 0, 0
             json_dict['bottom_player']['box'].append([int(z) for z in [x1, y1, x2, y2]])
             json_dict['bottom_player']['position'].append((int((x1 + x2) / 2), int(y2)))
             json_dict['bottom_player']['position_unwarped'].append((int(xw1), int(yw1)))
@@ -174,7 +190,7 @@ if __name__ == "__main__":
             json_dict['bottom_player']['position'].append((-1, -1))
             json_dict['bottom_player']['position_unwarped'].append((-1, -1))
             json_dict['bottom_player']['confidence'].append(-1)
-    with open(str(clip_video_path.parent / clip_video_path.stem) + ".json", "w") as f:
+    with open(str(save_path / save_path.stem) + ".json", "w") as f:
         json.dump(json_dict, f)
 
     for i in tqdm.tqdm(range(len(frames))):
@@ -194,11 +210,17 @@ if __name__ == "__main__":
             x, y = json_dict['top_player']['position_unwarped'][i]
             top_valid = (x, y) != (-1, -1)
             if top_valid:
-                img = cv2.circle(img, (x * scale + padding // 2, int(78 - y) * scale + padding // 2), 5, (0, 255, 0), -1)
+                try:
+                    img = cv2.circle(img, (x * scale + padding // 2, int(78 - y) * scale + padding // 2), 5, (0, 255, 0), -1)
+                except:
+                    pass
             x, y = json_dict['bottom_player']['position_unwarped'][i]
             bottom_valid = (x, y) != (-1, -1)
             if bottom_valid:
-                img = cv2.circle(img, (x * scale + padding // 2, int(78 - y) * scale + padding // 2), 5, (0, 255, 0), -1)
+                try:
+                    img = cv2.circle(img, (x * scale + padding // 2, int(78 - y) * scale + padding // 2), 5, (0, 255, 0), -1)
+                except:
+                    pass
 
             # draw top player box
             if top_valid:
@@ -219,7 +241,7 @@ if __name__ == "__main__":
         else:
             pass
         cv2.imwrite(str(clip_video_path / ("%05d.png" % i)), img)
-    command = f"ffmpeg -r 8 -i {str(clip_video_path)}/%05d.png -c:v libx264 -q:v 2 -vf fps=8 -pix_fmt yuv420p {clip_video_path.parent / clip_video_path.stem}.mp4"
+    command = f"ffmpeg -y -r 8 -i {str(clip_video_path)}/%05d.png -c:v libx264 -q:v 2 -vf fps=8 -pix_fmt yuv420p {save_path / save_path.stem}.mp4"
     print(command)
     os.system(command)
     # shutil.rmtree(str(clip_video_path))

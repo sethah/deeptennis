@@ -5,12 +5,12 @@ from pathlib import Path
 import logging
 from logging.config import fileConfig
 import cv2
-from typing import List
+from typing import List, Tuple
 
 import deeptennis.utils as utils
 
 
-def mask_image(img: np.ndarray, pts: np.ndarray, dilate=False):
+def mask_image(img: np.ndarray, pts: np.ndarray, dilate=False) -> np.ndarray:
     """
     Zero out the irrelevant part of the court and do edge detection.
 
@@ -31,7 +31,11 @@ def mask_image(img: np.ndarray, pts: np.ndarray, dilate=False):
     return cv2.bitwise_and(cannyed_image.astype(np.int32), mask)
 
 
-def get_lines(lines, min_vert_len=100, min_horiz_len=100, min_vert_slope=1.5, max_horiz_slope=0.01):
+def get_lines(lines: np.ndarray,
+              min_vert_len: int = 100,
+              min_horiz_len: int = 100,
+              min_vert_slope: float = 1.5,
+              max_horiz_slope: float = 0.01) -> Tuple[np.ndarray, np.ndarray]:
     horizontal_lines = []
     vertical_lines = []
     for line in lines:
@@ -46,14 +50,16 @@ def get_lines(lines, min_vert_len=100, min_horiz_len=100, min_vert_slope=1.5, ma
     return horizontal_lines, vertical_lines
 
 
-def slope(x1: float, y1: float, x2: float, y2: float):
+def slope(x1: float, y1: float, x2: float, y2: float) -> float:
     if x2 == x1:
         return 1000000.
     else:
         return (y2 - y1) / (x2 - x1)
 
 
-def get_baseline_vertical(horizontal_lines, min_separation=30, max_separation=100):
+def get_baseline_vertical(horizontal_lines: np.ndarray,
+                          min_separation: int = 30,
+                          max_separation: int = 100) -> Tuple[np.ndarray, np.ndarray]:
     if len(horizontal_lines) == 0:
         return 0, 0
     base = max([l[1] for l in horizontal_lines])
@@ -65,7 +71,7 @@ def get_baseline_vertical(horizontal_lines, min_separation=30, max_separation=10
     return base, serve
 
 
-def get_sidelines(vertical_lines):
+def get_sidelines(vertical_lines: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     if len(vertical_lines) == 0:
         return np.zeros(4), np.zeros(4)
     intercepts = [l[0] + (360 - l[1]) / slope(*l) for l in vertical_lines]
@@ -97,7 +103,11 @@ def get_keypoints_horizontal(y_base, y_serve, left_sideline, right_sideline):
     return x_base_left, x_base_right, x_serve_right, x_serve_left
 
 
-def get_top_corner(x_base, y_base, x_serve, y_serve, x_base_opp):
+def get_top_corner(x_base: float,
+                   y_base: float,
+                   x_serve: float,
+                   y_serve: float,
+                   x_base_opp: float) -> Tuple[float, float]:
     w = abs(x_base - x_base_opp)
     m = 1 * slope(x_base, y_base, x_serve, y_serve)
     x4 = x_base + (y_serve - y_base) * 1 / m
@@ -112,6 +122,7 @@ def get_top_corner(x_base, y_base, x_serve, y_serve, x_base_opp):
     x_top = x_serve + l * np.sin(theta)
     y_top = y_serve - l * np.cos(theta)
     return x_top, y_top
+
 
 def get_court_for_frame(frame: np.ndarray,
                         court_crop_x: List[float],
@@ -157,6 +168,7 @@ def get_court_for_frame(frame: np.ndarray,
     x5, y5 = get_top_corner(x2, y2, x3, y3, x1)
     return [float(x) for x in [x1, y1, x2, y2, x5, y5, x6, y6]]
 
+
 def get_court_keypoints(frames: List[Path],
                         mask: np.ndarray,
                         court_crop_x: List[float],
@@ -166,8 +178,7 @@ def get_court_keypoints(frames: List[Path],
                         min_vert_slope: float,
                         max_horiz_slope: float,
                         max_baseline_offset: float,
-                        dilate_edges: bool = False
-                        ) -> List[List[float]]:
+                        dilate_edges: bool = False) -> List[List[float]]:
     court_boxes = []
     num_invalid = 0
     for i, frame in enumerate(frames):

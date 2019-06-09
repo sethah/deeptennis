@@ -57,26 +57,19 @@ local BASE_ITERATOR = {
   "batch_size": 2 * NUM_GPUS,
 };
 
-local MODEL = {
-    "type": "detectron_rpn",
-    "anchor_sizes": [[32], [64], [128], [256], [512]],
-    "anchor_aspect_ratios": [[0.5, 1.0, 2.0], [0.5, 1.0, 2.0], [0.5, 1.0, 2.0], [0.5, 1.0, 2.0], [0.5, 1.0, 2.0]],
-    "batch_size_per_image": 256
-};
-
 local start_momentum = 0.9;
 local initial_lr = 1e-4;
 {
   "dataset_reader": TRAIN_READER,
   "validation_dataset_reader": VALID_READER,
-  "train_data_path": std.extVar("TRAIN_PATH"),
-  "validation_data_path": std.extVar("VALIDATION_PATH"),
-  "vocabulary": {
-      // Plausible config for generating the vocabulary.
-      "max_vocab_size": 50000,
-      "min_count": {"tokens": 1}
+  "train_data_path": "https://deeptennis.s3-us-west-1.amazonaws.com/train.tar.gz",
+  "validation_data_path": "https://deeptennis.s3-us-west-1.amazonaws.com/val.tar.gz"
+  "model": {
+      "type": "detectron_rpn",
+      "anchor_sizes": [[32], [64], [128], [256], [512]],
+      "anchor_aspect_ratios": [[0.5, 1.0, 2.0], [0.5, 1.0, 2.0], [0.5, 1.0, 2.0], [0.5, 1.0, 2.0], [0.5, 1.0, 2.0]],
+      "batch_size_per_image": 256
   },
-  "model": MODEL,
   "iterator": BASE_ITERATOR,
   "trainer": {
     "num_epochs": NUM_EPOCHS,
@@ -104,12 +97,6 @@ local initial_lr = 1e-4;
         "cut_frac": 0.3,
         "decay_factor": 0.3
     },
-    //"momentum_scheduler": {
-    //    "type": "inverted_triangular",
-    //    "cool_down": 30,
-    //    "warm_up": 70,
-    //    "ratio": 2,
-    //},
     "summary_interval": 10
   }
 }

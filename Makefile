@@ -67,7 +67,7 @@ $(DATA_DIR)/interim/court/%.json: $(DATA_DIR)/interim/action_mask/%.json
 player_tracking: $(addprefix $(DATA_DIR)/interim/player_tracking/, $(addsuffix .json, $(basename $(notdir $(ALL_VIDEOS)))))
 $(DATA_DIR)/interim/player_tracking/%.json: $(DATA_DIR)/processed/frames/%
 	find $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) -type f -printf '{"image_path": "%p"}\n' | sort > /tmp/player_tracking_temp.json && \
-	allennlp predict $(PROJECT_DIR)/models/player_rcnn/model.tar.gz /tmp/player_tracking_temp.json \
+	allennlp predict $(MODEL_PATH) /tmp/player_tracking_temp.json \
 	--cuda-device 0 --output-file $@ --silent --predictor default_image \
 	--batch-size 4 \
 	--overrides '{"dataset_reader": {"type": "image_annotation", "augmentation": [{"type": "resize","height": 512, "width": 512}, {"type": "normalize"}], "lazy": true}, "model": {"roi_box_head": {"decoder_thresh": 0.01}}}' \
@@ -80,7 +80,7 @@ $(DATA_DIR)/interim/player_tracking/%.json: $(DATA_DIR)/processed/frames/%
 	--include-package allencv.predictors \
 	&& rm /tmp/player_tracking_temp.json
 
-$(DATA_DIR)/interim/tracking_videos/%.mp4: $(DATA_DIR)/interim/player_tracking/%.json
+$(DATA_DIR)/interim/tracking_videos/%: $(DATA_DIR)/interim/player_tracking/%.json
 	python $(PROJECT_DIR)/scripts/make_tracking_video.py \
 	--tracking-path $(addsuffix .json, $(DATA_DIR)/interim/player_tracking/$(basename $(notdir $<))) \
 	--frame-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \

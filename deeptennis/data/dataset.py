@@ -1,24 +1,9 @@
-import cv2
-import json
 import numpy as np
 from pathlib import Path
 from PIL import Image
-import random
-from typing import Callable, List, Tuple, Iterable
-
-from allennlp.data.dataset_readers import DatasetReader
-from allennlp.data.fields import ArrayField
-from allennlp.data import Instance
-from allennlp.common import Registrable
+from typing import Callable, List
 
 import torch
-import torchvision.transforms as tvt
-import torchvision.transforms.functional as tvf
-
-import albumentations as aug
-from albumentations.core.transforms_interface import ImageOnlyTransform
-
-import deeptennis.vision.transforms as transforms
 
 
 def compute_mean_std(ds: torch.utils.data.Dataset):

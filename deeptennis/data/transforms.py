@@ -36,12 +36,15 @@ class CourtKeypointFlip(DualTransform):
     def apply_to_keypoints(self, keypoints, **params):
         keypoints = [list(keypoint) for keypoint in keypoints]
         kps = [self.apply_to_keypoint(keypoint[:4], **params) + keypoint[4:] for keypoint in keypoints]
-        sorted_x = sorted(kps, key=lambda x: x[0])
-        bottom_left = max(sorted_x[:2], key=lambda x: x[1])
-        top_left = min(sorted_x[:2], key=lambda x: x[1])
-        bottom_right = max(sorted_x[2:], key=lambda x: x[1])
-        top_right = min(sorted_x[2:], key=lambda x: x[1])
-        return [bottom_left, bottom_right, top_right, top_left]
+        # print(kps)
+        # sorted_x = sorted(kps, key=lambda x: x[0])
+        # bottom_left = max(sorted_x[:2], key=lambda x: x[1])
+        # top_left = min(sorted_x[:2], key=lambda x: x[1])
+        # bottom_right = max(sorted_x[2:], key=lambda x: x[1])
+        # top_right = min(sorted_x[2:], key=lambda x: x[1])
+        # tmp = [bottom_left, bottom_right, top_right, top_left]
+        # print(tmp)
+        return kps
 
 
 ImageTransform.register("keypoint_hflip")(_ImageTransformWrapper(CourtKeypointFlip))
