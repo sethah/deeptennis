@@ -32,7 +32,7 @@ python -m allencv.service.server_simple \
 --include-package allencv.predictors \
 --title "Player detector" \
 --detection \
---overrides '{"dataset_reader": {"type": "image_annotation", "augmentation": [{"type": "resize", "height": 512, "width": 512}, {"type": "normalize"}], "lazy": true}, "model": {"roi_box_head": {"decoder_detections_per_image": 50}}}'
+--overrides '{"dataset_reader": {"type": "image_annotation", "augmentation": [{"type": "resize", "height": 512, "width": 512}, {"type": "normalize"}], "lazy": true}, "model": {"roi_box_head": {"decoder_detections_per_image": 50}, "rpn": {"archive_file": "https://deeptennis.s3-us-west-1.amazonaws.com/player_rpn_res50_fpn.tar.gz"}}}'
 ```
 
 Navigate to `localhost:8000` and select an image of a tennis point to view the model's detections. 

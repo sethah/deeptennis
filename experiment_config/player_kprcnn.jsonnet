@@ -59,7 +59,7 @@ local MODEL = {
     "type": "keypoint_rcnn",
     "rpn": {
         "type": "pretrained_rpn",
-        "archive_file": std.extVar("RPN_PATH"),
+        "archive_file": "https://deeptennis.s3-us-west-1.amazonaws.com/player_rpn_res50_fpn.tar.gz",
         "requires_grad": true
     },
     "train_rpn": true,

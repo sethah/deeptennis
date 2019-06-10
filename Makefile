@@ -10,6 +10,11 @@ PROFILE = default
 PROJECT_NAME = tennis
 PYTHON_INTERPRETER = python3
 USE_GPU = 0
+ifeq ($(USE_GPU), 1)
+	CUDA_DEVICE = 0
+else
+	CUDA_DEVICE = -1
+endif
 DATA_DIR = $(PROJECT_DIR)/data
 
 ifeq (,$(shell which conda))
@@ -36,8 +41,10 @@ test_all:
 	${RUNTEST} ${ALLMODULES}
 
 ## Make Dataset
-data: requirements
-	$(PYTHON_INTERPRETER) deeptennis/data/make_dataset.py
+data:
+	mkdir -p $(DATA_DIR)/processed
+	mkdir -p $(DATA_DIR)/interim
+	mkdir -p $(DATA_DIR)/raw
 
 ALL_VIDEOS=$(wildcard $(DATA_DIR)/raw/*.mp4)
 
@@ -68,7 +75,7 @@ player_tracking: $(addprefix $(DATA_DIR)/interim/player_tracking/, $(addsuffix .
 $(DATA_DIR)/interim/player_tracking/%.json: $(DATA_DIR)/processed/frames/%
 	find $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) -type f -printf '{"image_path": "%p"}\n' | sort > /tmp/player_tracking_temp.json && \
 	allennlp predict $(MODEL_PATH) /tmp/player_tracking_temp.json \
-	--cuda-device 0 --output-file $@ --silent --predictor default_image \
+	--cuda-device $(CUDA_DEVICE) --output-file $@ --silent --predictor default_image \
 	--batch-size 4 \
 	--overrides '{"dataset_reader": {"type": "image_annotation", "augmentation": [{"type": "resize","height": 512, "width": 512}, {"type": "normalize"}], "lazy": true}, "model": {"roi_box_head": {"decoder_thresh": 0.01}}}' \
 	--include-package allencv.data.dataset_readers \
@@ -80,7 +87,7 @@ $(DATA_DIR)/interim/player_tracking/%.json: $(DATA_DIR)/processed/frames/%
 	--include-package allencv.predictors \
 	&& rm /tmp/player_tracking_temp.json
 
-$(DATA_DIR)/interim/tracking_videos/%: $(DATA_DIR)/interim/player_tracking/%.json
+data/interim/tracking_videos/%: $(DATA_DIR)/interim/player_tracking/%.json
 	python $(PROJECT_DIR)/scripts/make_tracking_video.py \
 	--tracking-path $(addsuffix .json, $(DATA_DIR)/interim/player_tracking/$(basename $(notdir $<))) \
 	--frame-path $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) \
