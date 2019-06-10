@@ -41,7 +41,7 @@ test_all:
 	${RUNTEST} ${ALLMODULES}
 
 ## Make Dataset
-data:
+data: requirements
 	mkdir -p $(DATA_DIR)/processed
 	mkdir -p $(DATA_DIR)/interim
 	mkdir -p $(DATA_DIR)/raw

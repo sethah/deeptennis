@@ -37,18 +37,11 @@ python -m allencv.service.server_simple \
 
 Navigate to `localhost:8000` and select an image of a tennis point to view the model's detections. 
 
-## Generate frames from training videos
-
-```
-make frames FPS=1 VFRAMES=2000
-```
-
 ## Generate an annotated video with predictions
 
-Place a `.mp4` video file of a tennis match in `$(PROJECT_ROOT)data/raw`, 
-e.g. `$(PROJECT_ROOT)/data/raw/djokovic_federer_wimbledon_16.mp4`. Then use make
-to generate output of the same name:
+```
+make data
+curl -o data/raw/ https://deeptennis.s3-us-west-1.amazonaws.com/federer_cilic_aus_18.mp4
+make data/interim/tracking_videos/federer_cilic_aus_18 FPS=1 VFRAMES=100 MODEL_PATH=https://deeptennis.s3-us-west-1.amazonaws.com/player_kprcnn_res50_fpn.tar.gz
+```
 
-```
-make $(PROJECT_ROOT)/data/interim/tracking_videos/djokovic_federer_wimbledon_16
-```

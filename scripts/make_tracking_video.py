@@ -162,7 +162,6 @@ if __name__ == "__main__":
             try:
                 player_marker = player_boxes_to_court_points(top_player_box.coords.reshape(1, 4), M)
                 xw1, yw1 = player_marker.ravel()
-                print(xw1, yw1, x1, y1, x2, y2)
             except:
                 xw1, yw1 = 0, 0
             json_dict['top_player']['box'].append([int(z) for z in [x1, y1, x2, y2]])
