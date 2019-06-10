@@ -11,8 +11,6 @@ from typing import Any, Dict, Iterable, List, Tuple, Union
 import torch
 import torchvision.transforms as tvt
 
-from deeptennis.vision.transforms import BoundingBox
-
 
 def image_norm(image_iter):
     imgs = []
