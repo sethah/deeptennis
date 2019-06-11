@@ -73,6 +73,7 @@ $(DATA_DIR)/interim/court/%.json: $(DATA_DIR)/interim/action_mask/%.json
 
 player_tracking: $(addprefix $(DATA_DIR)/interim/player_tracking/, $(addsuffix .json, $(basename $(notdir $(ALL_VIDEOS)))))
 $(DATA_DIR)/interim/player_tracking/%.json: $(DATA_DIR)/processed/frames/%
+	mkdir -p $(DATA_DIR)/interim/player_tracking && \
 	find $(DATA_DIR)/processed/frames/$(basename $(notdir $<)) -type f -printf '{"image_path": "%p"}\n' | sort > /tmp/player_tracking_temp.json && \
 	allennlp predict $(MODEL_PATH) /tmp/player_tracking_temp.json \
 	--cuda-device $(CUDA_DEVICE) --output-file $@ --silent --predictor default_image \
