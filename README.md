@@ -42,6 +42,8 @@ Navigate to `localhost:8000` and select an image of a tennis point to view the m
 ## Generate an annotated video with predictions
 
 ```
+# change to the project root directory
+cd path/to/deeptennis
 make data
 # download a short highlight video for making predictions
 curl -o data/raw/federer_cilic_aus_18.mp4 https://deeptennis.s3-us-west-1.amazonaws.com/federer_cilic_aus_18.mp4
