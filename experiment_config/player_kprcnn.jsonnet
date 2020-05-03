@@ -65,28 +65,7 @@ local MODEL = {
     "train_rpn": true,
     "roi_box_head": {
         "feature_extractor": {
-            "type": "flatten""rpn": {
-        "type": "pretrained_rpn",
-        "archive_file": "https://deeptennis.s3-us-west-1.amazonaws.com/player_rpn_res50_fpn.tar.gz",
-        "requires_grad": true
-    },
-    "train_rpn": true,
-    "roi_box_head": {
-        "feature_extractor": {
             "type": "flatten",
-            "input_channels": 256,
-            "input_height": 7,
-            "input_width": 7,
-            "feedforward": {
-                "input_dim": 7*7*256,
-                "num_layers": 2,
-                "hidden_dims": [256, 256],
-                "activations": 'relu'
-            }
-        },
-        "decoder_thresh": 0.05,
-        "decoder_nms_thresh": 0.2
-    },
             "input_channels": 256,
             "input_height": 7,
             "input_width": 7,
@@ -118,7 +97,7 @@ local initial_lr = 1e-4;
   "dataset_reader": TRAIN_READER,
   "validation_dataset_reader": VALID_READER,
   "train_data_path": "https://deeptennis.s3-us-west-1.amazonaws.com/train.tar.gz",
-  "validation_data_path": "https://deeptennis.s3-us-west-1.amazonaws.com/val.tar.gz"
+  "validation_data_path": "https://deeptennis.s3-us-west-1.amazonaws.com/val.tar.gz",
   "model": MODEL,
   "iterator": BASE_ITERATOR,
   "vocabulary": {

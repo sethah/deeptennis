@@ -63,7 +63,7 @@ local initial_lr = 1e-4;
   "dataset_reader": TRAIN_READER,
   "validation_dataset_reader": VALID_READER,
   "train_data_path": "https://deeptennis.s3-us-west-1.amazonaws.com/train.tar.gz",
-  "validation_data_path": "https://deeptennis.s3-us-west-1.amazonaws.com/val.tar.gz"
+  "validation_data_path": "https://deeptennis.s3-us-west-1.amazonaws.com/val.tar.gz",
   "model": {
       "type": "detectron_rpn",
       "anchor_sizes": [[32], [64], [128], [256], [512]],
